@@ -1,0 +1,13 @@
+{
+  "name": "美容客戶管理系統",
+  "short_name": "客戶管理",
+  "description": "美容/美甲/皮膚保養工作室客戶資料卡管理",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#EDE7DA",
+  "theme_color": "#3A332B",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

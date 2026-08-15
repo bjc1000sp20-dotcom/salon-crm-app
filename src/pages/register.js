@@ -15,7 +15,7 @@ export function renderRegister(app) {
         </div>
         <div class="field">
           <label class="field-label" for="email">Email</label>
-          <input id="email" type="email" autocomplete="username" required />
+          <input id="email" name="email" type="email" autocomplete="username" required />
         </div>
         <div class="field">
           ${passwordFieldHtml('password', '密碼', 'new-password', 'minlength="6"')}

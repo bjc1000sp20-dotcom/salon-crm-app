@@ -1,23 +1,24 @@
 // 沿用原型 setupSignaturePad() 的手繪簽名邏輯,改成回傳 Blob(給 Supabase Storage 上傳用)
-// 而不是 base64 dataURL。只在新增客戶時使用,編輯時不會呼叫這個。
-export function signaturePadHtml() {
+// 而不是 base64 dataURL。
+// 支援用 prefix 參數區分多組簽名板(例如客戶簽名 + 同意書簽名要同時出現在同一頁時)。
+export function signaturePadHtml(prefix = 'sig') {
   return `
-    <div class="sig-wrap" id="sig-wrap">
-      <canvas id="sig-canvas"></canvas>
-      <div class="sig-placeholder" id="sig-placeholder">請在此手指簽名</div>
+    <div class="sig-wrap" id="${prefix}-wrap">
+      <canvas id="${prefix}-canvas"></canvas>
+      <div class="sig-placeholder" id="${prefix}-placeholder">請在此手指簽名</div>
     </div>
     <div class="sig-actions">
-      <button type="button" class="sig-clear" id="sig-clear">清除重簽</button>
-      <span class="sig-status" id="sig-status"></span>
+      <button type="button" class="sig-clear" id="${prefix}-clear">清除重簽</button>
+      <span class="sig-status" id="${prefix}-status"></span>
     </div>
   `;
 }
 
-export function setupSignaturePad() {
-  const canvas = document.getElementById('sig-canvas');
-  const placeholder = document.getElementById('sig-placeholder');
-  const clearBtn = document.getElementById('sig-clear');
-  const statusEl = document.getElementById('sig-status');
+export function setupSignaturePad(prefix = 'sig') {
+  const canvas = document.getElementById(`${prefix}-canvas`);
+  const placeholder = document.getElementById(`${prefix}-placeholder`);
+  const clearBtn = document.getElementById(`${prefix}-clear`);
+  const statusEl = document.getElementById(`${prefix}-status`);
   const ctx = canvas.getContext('2d');
 
   let hasStroke = false;

@@ -12,6 +12,17 @@ export function signOutUser() {
   return supabase.auth.signOut();
 }
 
+// 寄送重設密碼信,信裡的連結點開會導回這個網站並觸發 PASSWORD_RECOVERY 事件(見 main.js)
+export function requestPasswordReset(email) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+}
+
+export function updatePassword(newPassword) {
+  return supabase.auth.updateUser({ password: newPassword });
+}
+
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
   return data.session;

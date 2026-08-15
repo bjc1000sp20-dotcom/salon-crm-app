@@ -4,6 +4,7 @@ import { ensureSalon, signOutUser } from './lib/auth.js';
 
 import { renderLogin } from './pages/login.js';
 import { renderRegister } from './pages/register.js';
+import { renderResetPassword } from './pages/resetPassword.js';
 import { renderClientList } from './pages/clientList.js';
 import { renderClientDetail } from './pages/clientDetail.js';
 import { renderClientForm } from './pages/clientForm.js';
@@ -13,6 +14,7 @@ import { renderVisitConfirm } from './pages/visitConfirm.js';
 import { renderVisitMaterialCost } from './pages/visitMaterialCost.js';
 import { renderLedger } from './pages/ledger.js';
 import { renderRevenue } from './pages/revenue.js';
+import { renderProductSales } from './pages/productSales.js';
 import { renderSettings } from './pages/settings.js';
 
 const root = document.getElementById('app');
@@ -46,6 +48,8 @@ const app = {
         return renderLogin(this);
       case 'register':
         return renderRegister(this);
+      case 'resetPassword':
+        return renderResetPassword(this);
       case 'clientList':
         return renderClientList(this);
       case 'clientDetail':
@@ -64,6 +68,8 @@ const app = {
         return renderLedger(this);
       case 'revenue':
         return renderRevenue(this);
+      case 'productSales':
+        return renderProductSales(this);
       case 'settings':
         return renderSettings(this);
       default:
@@ -78,8 +84,12 @@ async function bootstrap() {
   const { data } = await supabase.auth.getSession();
   app.session = data.session;
 
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.auth.onAuthStateChange((event, session) => {
     app.session = session;
+    if (event === 'PASSWORD_RECOVERY') {
+      app.navigate('resetPassword');
+      return;
+    }
     if (!session) {
       app.salon = null;
       app.navigate('login');

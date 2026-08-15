@@ -9,6 +9,21 @@
 - 帳號隔離:Postgres **Row Level Security**,資料庫層強制執行,不是只有畫面上不顯示
 - 部署:Vercel(純靜態網站,`npm run build` 產出 `dist/` 資料夾)
 
+## LINE 官方帳號串接(進行中,分階段開發)
+
+`api/` 資料夾是新增的 Vercel Serverless Functions(伺服器端程式碼),跟 `src/` 底下的靜態前端完全分開,不會互相干擾。目前狀態:
+
+- `api/line/webhook.js` — 接收 LINE 傳來的事件(加好友、傳訊息、封鎖),驗證簽章,**目前只記錄 log,不會寫入任何 CRM 資料、不會自動回覆**
+- `api/line/test-push.js` — 測試用端點,確認後端能不能成功呼叫 LINE 推播,需要帶正確的 `x-internal-secret` header 才能用
+- `api/_lib/` — 共用邏輯(呼叫 LINE API、驗證簽章、讀取原始請求內容)
+
+需要在 Vercel 後台新增的環境變數(**都不要加 `VITE_` 前綴**,這樣才不會被打包進前端):
+- `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_ACCESS_TOKEN`
+- `INTERNAL_API_SECRET`(自己設一組隨機字串,用來保護測試/內部用的 API,不要用簡單的字)
+
+之後 Phase 3(客戶綁定 LINE)開始會需要 Supabase 的 **Secret key**(在 Supabase 後台「API Keys → Publishable and secret API keys」那頁,`sb_secret_...` 開頭那把,不是 Publishable key),屆時會再新增 `SUPABASE_SERVICE_ROLE_KEY` 這個環境變數,一樣只給後端用。
+
 ## 第一次設定步驟
 
 ### 1. 建立 Supabase 專案

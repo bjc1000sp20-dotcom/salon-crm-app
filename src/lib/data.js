@@ -282,6 +282,16 @@ export async function listProductSalesForClient(clientId) {
   return data;
 }
 
+export async function listAllProductSales(salonId) {
+  const { data, error } = await supabase
+    .from('product_sales')
+    .select('*, clients(name)')
+    .eq('salon_id', salonId)
+    .order('sale_date', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export async function listMonthlyProductSales(salonId, month) {
   const [y, m] = month.split('-').map(Number);
   const nextMonth = new Date(y, m, 1);
@@ -306,6 +316,11 @@ export async function createProductSale(salonId, clientId, userId, fields) {
     .single();
   if (error) throw error;
   return data;
+}
+
+export async function deleteProductSale(saleId) {
+  const { error } = await supabase.from('product_sales').delete().eq('id', saleId);
+  if (error) throw error;
 }
 
 export async function updateProductSale(saleId, userId, fields) {

@@ -5,12 +5,10 @@ import {
   setRent,
   getServiceMix,
   getSourceMix,
-  listMonthlyProductSales,
 } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { SERVICES } from '../lib/services.js';
 import { SOURCES, sourceName } from '../lib/sources.js';
-import { openProductSaleModal } from '../components/productSaleModal.js';
 
 function pad2(n) {
   return (n < 10 ? '0' : '') + n;
@@ -51,13 +49,12 @@ export async function renderRevenue(app) {
 }
 
 async function loadContent(app, month) {
-  const [summary, analytics, visits, serviceMix, sourceMix, productSales] = await Promise.all([
+  const [summary, analytics, visits, serviceMix, sourceMix] = await Promise.all([
     getMonthlySummary(app.salon.id, month),
     getMonthlyAnalytics(app.salon.id, month),
     listMonthlyVisits(app.salon.id, month),
     getServiceMix(app.salon.id, month),
     getSourceMix(app.salon.id, month),
-    listMonthlyProductSales(app.salon.id, month),
   ]);
 
   const content = document.getElementById('revenue-content');
@@ -69,6 +66,10 @@ async function loadContent(app, month) {
         <button class="month-nav-btn" id="next-month">›</button>
       </div>
       <div class="revenue-nums">
+        <div class="revenue-num-block">
+          <div class="revenue-num-label">本月來客數</div>
+          <div class="revenue-num-value">${analytics.total_clients || 0} 位</div>
+        </div>
         <div class="revenue-num-block">
           <div class="revenue-num-label">總營業額</div>
           <div class="revenue-num-value">$${formatMoney(summary.total_revenue)}</div>
@@ -96,7 +97,7 @@ async function loadContent(app, month) {
     ${analyticsHtml(analytics)}
     ${serviceMixHtml(serviceMix)}
     ${sourceMixHtml(sourceMix)}
-    ${productSalesHtml(summary, productSales)}
+    ${productSalesHtml(summary)}
 
     <div class="section-label" style="margin:0 20px 8px;">當月消費明細</div>
     ${
@@ -124,10 +125,7 @@ async function loadContent(app, month) {
   };
   document.getElementById('edit-rent-btn').onclick = () => openRentModal(app, month, summary.rent);
 
-  const addProductBtn = document.getElementById('add-product-sale-btn');
-  if (addProductBtn) {
-    addProductBtn.onclick = () => openProductSaleModal(app, null, () => loadContent(app, month));
-  }
+  document.getElementById('manage-product-sales-btn').onclick = () => app.navigate('productSales');
 }
 
 function analyticsHtml(a) {
@@ -225,13 +223,13 @@ function sourceMixHtml(mix) {
   `;
 }
 
-function productSalesHtml(summary, productSales) {
+function productSalesHtml(summary) {
   const revenuePct = summary.total_revenue ? Math.round((summary.product_revenue / summary.total_revenue) * 100) : 0;
   const profitPct = summary.profit ? Math.round((summary.product_profit / summary.profit) * 100) : 0;
 
   return `
     <div class="analytics-block">
-      <div class="analytics-title">商品銷售</div>
+      <div class="analytics-title">商品銷售(本月)</div>
       <div class="revenue-nums" style="margin-top:0;">
         <div class="revenue-num-block">
           <div class="revenue-num-label">商品營收</div>
@@ -247,23 +245,7 @@ function productSalesHtml(summary, productSales) {
         </div>
       </div>
       <div class="field-hint" style="margin:10px 0 14px;">佔總營業額 ${revenuePct}% ・ 佔總淨利潤 ${profitPct}%</div>
-      <button class="secondary-btn" id="add-product-sale-btn" style="margin-top:0;margin-bottom:14px;">＋ 新增商品銷售</button>
-      ${
-        productSales.length
-          ? productSales
-              .map(
-                (p) => `
-        <div class="visit-list-row">
-          <div class="vlr-left">
-            <div class="vlr-name">${escapeHtml(p.item_name)}${p.clients?.name ? ` · ${escapeHtml(p.clients.name)}` : ''}</div>
-            <div class="vlr-date">${p.sale_date}</div>
-          </div>
-          <div class="vlr-amount">$${formatMoney(p.amount)}</div>
-        </div>`
-              )
-              .join('')
-          : `<div class="empty-body" style="padding:0 0 4px;">這個月還沒有商品銷售紀錄</div>`
-      }
+      <button class="secondary-btn" id="manage-product-sales-btn" style="margin-top:0;">商品銷售明細 / 新增</button>
     </div>
   `;
 }

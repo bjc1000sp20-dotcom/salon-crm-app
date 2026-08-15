@@ -8,11 +8,10 @@ export async function renderClientList(app) {
     <div class="screen">
       <div class="header">
         <div>
-          <div class="header-eyebrow">CLIENT RECORDS</div>
+          <div class="header-eyebrow">${escapeHtml(app.salon.salon_name || 'CLIENT RECORDS')}</div>
           <h1 class="header-title">客戶資料卡</h1>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="icon-btn" id="settings-btn" title="設定">⚙</button>
           <button class="btn-ghost" id="logout-btn" style="height:38px;">登出</button>
           <button class="add-btn" id="add-client-btn">＋</button>
         </div>
@@ -29,7 +28,6 @@ export async function renderClientList(app) {
   `;
 
   bindTabBar(app);
-  document.getElementById('settings-btn').onclick = () => app.navigate('settings');
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('add-client-btn').onclick = () => app.navigate('clientForm', { mode: 'create' });
 

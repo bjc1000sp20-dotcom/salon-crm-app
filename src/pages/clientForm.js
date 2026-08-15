@@ -1,4 +1,4 @@
-import { createClient, updateClient, getClient, uploadSignature } from '../lib/data.js';
+import { createClient, updateClient, getClient, uploadSignature, uploadConsentSignature } from '../lib/data.js';
 import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.js';
 import { SOURCES } from '../lib/sources.js';
 import { SKINCARE_TYPES, SKIN_CONCERNS, SKIN_TYPES } from '../lib/intakeOptions.js';
@@ -127,7 +127,24 @@ export async function renderClientForm(app) {
             ? `
         <div class="field">
           <div class="field-label">客戶簽名(僅首次建卡簽一次)</div>
-          ${signaturePadHtml()}
+          ${signaturePadHtml('client-sig')}
+        </div>
+
+        <div class="section-label" style="margin-top:10px;">課程前同意書</div>
+        <div class="field-hint" style="margin-bottom:10px;">客戶第一次到店建卡,請在此一併確認同意書內容。</div>
+        <div class="note-box" style="margin-bottom:16px;">${escapeHtml(app.salon.consent_template)}</div>
+
+        <div class="field">
+          <div class="field-label">本人授權此店家可拍攝前後對比照或影片紀錄及宣傳</div>
+          <div class="service-grid">
+            <button type="button" class="service-chip photo-consent-chip" data-v="true">是</button>
+            <button type="button" class="service-chip photo-consent-chip" data-v="false">否</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">同意書簽名<span class="req"> *</span></div>
+          ${signaturePadHtml('consent-sig')}
         </div>`
             : client?.signature_url
               ? `
@@ -247,8 +264,22 @@ export async function renderClientForm(app) {
   });
 
   let sigPad = null;
+  let consentSigPad = null;
+  let photoConsent = null;
   if (!isEdit) {
-    sigPad = setupSignaturePad();
+    sigPad = setupSignaturePad('client-sig');
+    consentSigPad = setupSignaturePad('consent-sig');
+    document.querySelectorAll('.photo-consent-chip').forEach((chip) => {
+      chip.onclick = () => {
+        photoConsent = chip.dataset.v === 'true';
+        document.querySelectorAll('.photo-consent-chip').forEach((c) => {
+          c.classList.remove('on');
+          c.style.background = '';
+        });
+        chip.classList.add('on');
+        chip.style.background = '#3A332B';
+      };
+    });
   } else if (client?.signature_url) {
     import('../lib/data.js').then(({ getSignedUrl }) =>
       getSignedUrl('signatures', client.signature_url).then((url) => {
@@ -294,6 +325,12 @@ export async function renderClientForm(app) {
         await updateClient(client.id, fields);
         app.navigate('clientDetail', { clientId: client.id });
       } else {
+        if (!consentSigPad || !consentSigPad.hasStroke()) {
+          alert('請先完成同意書簽名');
+          saveBtn.disabled = false;
+          saveBtn.textContent = '建立客戶卡';
+          return;
+        }
         const created = await createClient(app.salon.id, app.session.user.id, fields);
         if (sigPad && sigPad.hasStroke()) {
           const blob = await sigPad.getBlob();
@@ -302,6 +339,14 @@ export async function renderClientForm(app) {
             await updateClient(created.id, { signature_url: path });
           }
         }
+        const consentBlob = await consentSigPad.getBlob();
+        const consentPath = await uploadConsentSignature(app.salon.id, created.id, consentBlob);
+        await updateClient(created.id, {
+          consent_signature_url: consentPath,
+          consent_text_snapshot: app.salon.consent_template,
+          consent_signed_at: new Date().toISOString(),
+          photo_consent: photoConsent,
+        });
         app.navigate('clientDetail', { clientId: created.id });
       }
     } catch (err) {
@@ -314,7 +359,11 @@ export async function renderClientForm(app) {
 }
 
 function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
+function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
-  return div.innerHTML.replace(/"/g, '&quot;');
+  return div.innerHTML;
 }

@@ -319,3 +319,44 @@ input, textarea, select { font-family: inherit; }
 .error-text { color: var(--red); font-size: 13px; margin: 4px 0 0; }
 
 .hidden { display: none !important; }
+
+/* ---- 平板(iPad 等)以上的畫面:整體放大,不要卡在手機寬度中間留一堆空白 ---- */
+@media (min-width: 700px) {
+  #app { max-width: 720px; }
+  .tab-bar { max-width: 720px; }
+
+  body { font-size: 17px; }
+
+  .header-title { font-size: 32px; }
+  .header-eyebrow { font-size: 13px; }
+  .detail-name { font-size: 23px; }
+  .detail-sub, .detail-row { font-size: 16px; }
+  .card-name { font-size: 17px; }
+  .card-age, .card-sub { font-size: 14px; }
+  .card-avatar, .detail-avatar { width: 60px; height: 60px; font-size: 22px; }
+
+  .field-label { font-size: 14px; }
+  .field input[type="text"], .field input[type="tel"], .field input[type="date"],
+  .field input[type="number"], .field input[type="email"], .field input[type="password"],
+  .field textarea {
+    font-size: 16px; padding: 14px 16px;
+  }
+
+  .primary-btn, .secondary-btn, .btn-ghost { font-size: 16px; padding: 15px; }
+  .service-chip { font-size: 14px; padding: 10px 16px; }
+
+  .sig-wrap canvas { height: 280px; }
+
+  .revenue-num-value { font-size: 21px; }
+  .balance-value { font-size: 23px; }
+
+  .modal-box { max-width: 460px; padding: 26px; }
+  .auth-card { max-width: 440px; padding: 40px 36px; }
+  .auth-card h1 { font-size: 26px; }
+}
+
+/* ---- 更寬的螢幕(例如 iPad 橫放、桌機瀏覽器):寬度封頂,避免無限被拉寬 ---- */
+@media (min-width: 1100px) {
+  #app { max-width: 820px; }
+  .tab-bar { max-width: 820px; }
+}

@@ -1,5 +1,6 @@
 import { updateSalon } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
 
 export function renderSettings(app) {
   app.root.innerHTML = `
@@ -23,6 +24,12 @@ export function renderSettings(app) {
             <div class="field-hint">客戶第一次建立客戶卡時,會看到這段文字並簽名同意。之後修改不會影響客戶已經簽過的舊紀錄。</div>
           </div>
           <button class="primary-btn" id="save-btn" style="margin-top:18px;">儲存</button>
+        </div>
+
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:10px;">LINE 自動追蹤訊息模板</div>
+          <div class="field-hint" style="margin-bottom:12px;">這些是客戶頁面「LINE 自動追蹤」勾選清單裡的預設選項,可以自己修改標籤、天數與訊息內容。修改後不會影響已經建立好的排程。</div>
+          <div id="templates-list">載入中...</div>
         </div>
       </div>
       ${tabBarHtml('settings')}
@@ -57,6 +64,74 @@ export function renderSettings(app) {
       saveBtn.textContent = '儲存';
     }
   };
+
+  loadTemplates(app);
+}
+
+async function loadTemplates(app) {
+  const listEl = document.getElementById('templates-list');
+  let templates;
+  try {
+    templates = await ensureDefaultFollowUpTemplates(app.salon.id);
+  } catch (err) {
+    console.error(err);
+    listEl.innerHTML = `讀取失敗:${escapeHtml(err.message)}`;
+    return;
+  }
+
+  listEl.innerHTML = templates
+    .map(
+      (t) => `
+    <div class="field" style="border-top:1px dashed #E5DCC8;padding-top:12px;margin-top:12px;">
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <div class="field-label">標籤</div>
+          <input type="text" class="tpl-label" data-id="${t.id}" value="${escapeAttr(t.label)}" />
+        </div>
+        <div style="width:90px;">
+          <div class="field-label">天數</div>
+          <input type="number" class="tpl-days" data-id="${t.id}" min="1" value="${t.days_after}" />
+        </div>
+      </div>
+      <div class="field-label" style="margin-top:8px;">訊息內容</div>
+      <textarea class="tpl-message" data-id="${t.id}" rows="3">${escapeHtml(t.message)}</textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+        <input type="checkbox" class="tpl-enabled" data-id="${t.id}" ${t.enabled ? 'checked' : ''} />
+        <span style="font-size:13px;color:#6B6355;">啟用(關閉後客戶頁面不會顯示這個選項)</span>
+      </label>
+      <button type="button" class="secondary-btn tpl-save-btn" data-id="${t.id}" style="margin-top:8px;">儲存這則模板</button>
+    </div>`
+    )
+    .join('');
+
+  listEl.querySelectorAll('.tpl-save-btn').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      const label = listEl.querySelector(`.tpl-label[data-id="${id}"]`).value.trim();
+      const days_after = Number(listEl.querySelector(`.tpl-days[data-id="${id}"]`).value);
+      const message = listEl.querySelector(`.tpl-message[data-id="${id}"]`).value.trim();
+      const enabled = listEl.querySelector(`.tpl-enabled[data-id="${id}"]`).checked;
+      if (!label || !days_after || !message) {
+        alert('標籤、天數、訊息內容都不能是空的');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = '儲存中...';
+      try {
+        await updateFollowUpTemplate(id, { label, days_after, message, enabled });
+        btn.textContent = '已儲存';
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '儲存這則模板';
+        }, 1200);
+      } catch (err) {
+        console.error(err);
+        alert('儲存失敗:' + err.message);
+        btn.disabled = false;
+        btn.textContent = '儲存這則模板';
+      }
+    };
+  });
 }
 
 function escapeHtml(str) {

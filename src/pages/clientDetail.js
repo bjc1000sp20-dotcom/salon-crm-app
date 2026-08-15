@@ -11,6 +11,16 @@ import { supabase } from '../supabaseClient.js';
 import { openProductSaleModal } from '../components/productSaleModal.js';
 import { sourceName } from '../lib/sources.js';
 import { SKIN_TYPES } from '../lib/intakeOptions.js';
+import { openLineContactPicker } from '../components/lineContactPicker.js';
+import {
+  unlinkClientLine,
+  ensureDefaultFollowUpTemplates,
+  listFollowUpsForClient,
+  createFollowUp,
+  updateFollowUp,
+  cancelFollowUp,
+  addDaysToToday,
+} from '../lib/lineIntegration.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -62,6 +72,10 @@ export async function renderClientDetail(app) {
         <button class="secondary-btn" id="ledger-btn" style="margin-top:0;margin-bottom:10px;">查看儲值/扣款帳本</button>
         <button class="secondary-btn" id="product-sale-btn" style="margin-top:0;margin-bottom:20px;">記錄商品銷售</button>
 
+        <div id="line-section">
+          <div class="analytics-block" style="text-align:center;color:#9B8F7F;">LINE 資訊載入中...</div>
+        </div>
+
         <div class="section-label">到店紀錄</div>
         <div id="visits-list">
           ${
@@ -83,6 +97,8 @@ export async function renderClientDetail(app) {
   document.getElementById('topup-btn').onclick = () => openTopupModal(app, client, balance);
   document.getElementById('product-sale-btn').onclick = () =>
     openProductSaleModal(app, client.id, () => app.navigate('clientDetail', { clientId: client.id }));
+
+  loadLineSection(app, client);
 
   document.querySelectorAll('.visit-card').forEach((el) => {
     el.onclick = () => app.navigate('visitForm', { mode: 'edit', clientId: client.id, visitId: el.dataset.id });
@@ -190,6 +206,263 @@ function openTopupModal(app, client, currentBalance) {
   };
 }
 
+// ---------------- LINE 自動追蹤區塊 ----------------
+
+async function loadLineSection(app, client) {
+  const container = document.getElementById('line-section');
+  if (!container) return;
+
+  let templates, followUps;
+  try {
+    [templates, followUps] = await Promise.all([
+      ensureDefaultFollowUpTemplates(app.salon.id),
+      listFollowUpsForClient(client.id),
+    ]);
+  } catch (err) {
+    console.error(err);
+    container.innerHTML = `<div class="analytics-block">LINE 資訊讀取失敗:${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  let customRows = [];
+
+  function render() {
+    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows);
+    bindEvents();
+  }
+
+  function bindEvents() {
+    const linkBtn = document.getElementById('line-link-btn');
+    if (linkBtn) {
+      linkBtn.onclick = () =>
+        openLineContactPicker(app, client, () => app.navigate('clientDetail', { clientId: client.id }));
+    }
+    const unlinkBtn = document.getElementById('line-unlink-btn');
+    if (unlinkBtn) {
+      unlinkBtn.onclick = async () => {
+        if (!confirm('確定要解除這位客戶的 LINE 綁定嗎?')) return;
+        await unlinkClientLine(client.id);
+        app.navigate('clientDetail', { clientId: client.id });
+      };
+    }
+
+    const addCustomBtn = document.getElementById('add-custom-followup-btn');
+    if (addCustomBtn) {
+      addCustomBtn.onclick = () => {
+        customRows.push({ key: Date.now(), date: addDaysToToday(1), message: '' });
+        render();
+      };
+    }
+    container.querySelectorAll('.custom-row-remove').forEach((btn) => {
+      btn.onclick = () => {
+        customRows = customRows.filter((r) => String(r.key) !== btn.dataset.key);
+        render();
+      };
+    });
+    container.querySelectorAll('.custom-row-date').forEach((input) => {
+      input.onchange = () => {
+        const row = customRows.find((r) => String(r.key) === input.dataset.key);
+        if (row) row.date = input.value;
+      };
+    });
+    container.querySelectorAll('.custom-row-message').forEach((textarea) => {
+      textarea.oninput = () => {
+        const row = customRows.find((r) => String(r.key) === textarea.dataset.key);
+        if (row) row.message = textarea.value;
+      };
+    });
+
+    const createBtn = document.getElementById('create-followups-btn');
+    if (createBtn) {
+      createBtn.onclick = async () => {
+        const checked = Array.from(container.querySelectorAll('.followup-check:checked'));
+        const validCustom = customRows.filter((r) => r.date && r.message.trim());
+        if (!checked.length && !validCustom.length) {
+          alert('請至少勾選一個追蹤時間,或新增一筆自訂日期並填寫訊息內容');
+          return;
+        }
+        createBtn.disabled = true;
+        createBtn.textContent = '建立中...';
+        try {
+          for (const el of checked) {
+            await createFollowUp(app.salon.id, client.id, app.session.user.id, {
+              template_id: el.dataset.templateId,
+              label: el.dataset.label,
+              message: el.dataset.message,
+              scheduled_at: addDaysToToday(el.dataset.days),
+            });
+          }
+          for (const row of validCustom) {
+            await createFollowUp(app.salon.id, client.id, app.session.user.id, {
+              template_id: null,
+              label: '自訂日期',
+              message: row.message.trim(),
+              scheduled_at: row.date,
+            });
+          }
+          followUps = await listFollowUpsForClient(client.id);
+          customRows = [];
+          render();
+        } catch (err) {
+          console.error(err);
+          alert('建立追蹤失敗:' + err.message);
+          createBtn.disabled = false;
+          createBtn.textContent = '建立 LINE 追蹤';
+        }
+      };
+    }
+
+    container.querySelectorAll('.followup-cancel-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('確定要取消這筆追蹤嗎?')) return;
+        await cancelFollowUp(btn.dataset.id);
+        followUps = await listFollowUpsForClient(client.id);
+        render();
+      };
+    });
+
+    container.querySelectorAll('.followup-edit-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const f = followUps.find((x) => x.id === btn.dataset.id);
+        if (f) openEditFollowUpModal(f, async (fields) => {
+          await updateFollowUp(f.id, fields);
+          followUps = await listFollowUpsForClient(client.id);
+          render();
+        });
+      };
+    });
+  }
+
+  render();
+}
+
+function lineSectionHtml(client, templates, followUps, customRows) {
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">LINE</div>
+      ${
+        client.line_user_id
+          ? `<div class="detail-row">✅ 已綁定${client.line_linked_at ? `(${formatDateTime(client.line_linked_at)})` : ''}</div>
+             <button class="secondary-btn" id="line-unlink-btn" style="margin-top:8px;">解除綁定</button>`
+          : `<div class="detail-row">尚未綁定 LINE</div>
+             <button class="secondary-btn" id="line-link-btn" style="margin-top:8px;">選擇 LINE 聯絡人</button>`
+      }
+    </div>
+
+    <div class="analytics-block">
+      <div class="analytics-title">LINE 自動追蹤</div>
+      ${
+        !client.line_user_id
+          ? `<div class="field-hint">尚未綁定 LINE,建立的追蹤會等綁定後才會實際發送。</div>`
+          : ''
+      }
+      ${templates
+        .filter((t) => t.enabled !== false)
+        .map(
+          (t) => `
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <input type="checkbox" class="followup-check" data-template-id="${t.id}" data-days="${t.days_after}" data-label="${escapeAttr(t.label)}" data-message="${escapeAttr(t.message)}" />
+          <span>${escapeHtml(t.label)}(${t.days_after} 天後)</span>
+        </label>`
+        )
+        .join('')}
+      <div id="custom-followup-rows">
+        ${customRows
+          .map(
+            (r) => `
+          <div class="field" style="border-top:1px dashed #E5DCC8;padding-top:10px;margin-top:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div class="field-label">自訂日期</div>
+              <button type="button" class="custom-row-remove" data-key="${r.key}" style="background:none;border:none;color:#B5533C;cursor:pointer;font-size:13px;">移除</button>
+            </div>
+            <input type="date" class="custom-row-date" data-key="${r.key}" value="${r.date}" />
+            <textarea class="custom-row-message" data-key="${r.key}" placeholder="訊息內容" style="margin-top:6px;">${escapeHtml(r.message)}</textarea>
+          </div>`
+          )
+          .join('')}
+      </div>
+      <button type="button" class="secondary-btn" id="add-custom-followup-btn" style="margin-top:10px;">＋ 自訂日期</button>
+      <button class="primary-btn" id="create-followups-btn" style="margin-top:12px;">建立 LINE 追蹤</button>
+    </div>
+
+    <div class="section-label">LINE 追蹤排程</div>
+    <div id="followups-list">
+      ${
+        followUps.length
+          ? followUps.map((f) => followUpRowHtml(f)).join('')
+          : `<div class="empty-state"><div class="empty-body">還沒有排程</div></div>`
+      }
+    </div>
+  `;
+}
+
+function followUpRowHtml(f) {
+  const statusMap = {
+    pending: { text: '待發送', color: '#9B8F7F' },
+    sent: { text: '已發送', color: '#4E8B5C' },
+    failed: { text: '發送失敗', color: '#B5533C' },
+    cancelled: { text: '已取消', color: '#B0A996' },
+  };
+  const s = statusMap[f.status] || statusMap.pending;
+  return `
+    <div class="visit-card" data-id="${f.id}">
+      <div class="visit-date-row">
+        <span class="visit-date">${f.scheduled_at}・${escapeHtml(f.label)}</span>
+        <span style="color:${s.color};font-size:13px;font-weight:600;">${s.text}</span>
+      </div>
+      <div class="visit-note">${escapeHtml(f.message)}</div>
+      ${f.sent_at ? `<div class="visit-note">發送時間:${formatDateTime(f.sent_at)}</div>` : ''}
+      ${f.error_message ? `<div class="visit-note" style="color:#B5533C;">錯誤:${escapeHtml(f.error_message)}</div>` : ''}
+      ${
+        f.status === 'pending'
+          ? `<div class="visit-tags" style="margin-top:8px;">
+               <button type="button" class="tag followup-edit-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F0EADA;">修改</button>
+               <button type="button" class="tag followup-cancel-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">取消</button>
+             </div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+function openEditFollowUpModal(followUp, onSave) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">修改追蹤</div>
+      <div class="field">
+        <div class="field-label">發送日期</div>
+        <input type="date" id="edit-followup-date" value="${followUp.scheduled_at}" />
+      </div>
+      <div class="field">
+        <div class="field-label">訊息內容</div>
+        <textarea id="edit-followup-message">${escapeHtml(followUp.message)}</textarea>
+      </div>
+      <button class="primary-btn" id="edit-followup-save" style="margin-top:10px;">儲存</button>
+      <button class="secondary-btn" id="edit-followup-cancel">取消</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('edit-followup-cancel').onclick = () => overlay.remove();
+  document.getElementById('edit-followup-save').onclick = async () => {
+    const scheduled_at = document.getElementById('edit-followup-date').value;
+    const message = document.getElementById('edit-followup-message').value.trim();
+    if (!scheduled_at || !message) {
+      alert('請填寫日期與訊息內容');
+      return;
+    }
+    await onSave({ scheduled_at, message });
+    overlay.remove();
+  };
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function formatMoney(n) {
   return Math.round(n || 0).toLocaleString('zh-TW');
 }
@@ -198,4 +471,8 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
 }

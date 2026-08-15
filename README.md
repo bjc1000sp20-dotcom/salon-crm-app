@@ -13,16 +13,28 @@
 
 `api/` 資料夾是新增的 Vercel Serverless Functions(伺服器端程式碼),跟 `src/` 底下的靜態前端完全分開,不會互相干擾。目前狀態:
 
-- `api/line/webhook.js` — 接收 LINE 傳來的事件(加好友、傳訊息、封鎖),驗證簽章,**目前只記錄 log,不會寫入任何 CRM 資料、不會自動回覆**
+- `api/line/webhook.js` — 接收 LINE 傳來的事件(加好友、傳訊息、封鎖),驗證簽章。加好友或傳訊息時,會把 LINE 使用者 ID 跟最後一則訊息內容寫進 `line_contacts` 這張「待配對名單」表,方便店員之後手動配對到對的客戶,**不會自動回覆客戶**
 - `api/line/test-push.js` — 測試用端點,確認後端能不能成功呼叫 LINE 推播,需要帶正確的 `x-internal-secret` header 才能用
-- `api/_lib/` — 共用邏輯(呼叫 LINE API、驗證簽章、讀取原始請求內容)
+- `api/cron/send-follow-ups.js` — 由 Vercel Cron 每天觸發一次,找出今天(或更早)該發送、還沒發送的 `follow_ups` 排程,一筆一筆呼叫 LINE 推播,成功記 `sent`、失敗記 `failed` 並附上錯誤訊息,不會互相影響
+- `api/_lib/` — 共用邏輯(呼叫 LINE API、驗證簽章、讀取原始請求內容、伺服器端專用的 Supabase 高權限連線)
 
 需要在 Vercel 後台新增的環境變數(**都不要加 `VITE_` 前綴**,這樣才不會被打包進前端):
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
 - `INTERNAL_API_SECRET`(自己設一組隨機字串,用來保護測試/內部用的 API,不要用簡單的字)
+- `SUPABASE_SECRET_KEY`(Supabase 後台「Project Settings → API Keys → Publishable and secret API keys」那頁,`sb_secret_...` 開頭那把;webhook 跟 cron 要繞過一般帳號的資料隔離規則,直接讀寫 `line_contacts`/`follow_ups`,才需要用到這把最高權限 key,**只能放這裡,絕對不能加 `VITE_` 前綴**)
+- `CRON_SECRET`(自己設一組隨機字串;Cron 端點會檢查請求帶的 `Authorization: Bearer <CRON_SECRET>`,防止外部隨便呼叫觸發發送;Vercel Cron 觸發時要在 Vercel 後台把這組值一起設定好,見下方「LINE 自動追蹤功能設定」)
 
-之後 Phase 3(客戶綁定 LINE)開始會需要 Supabase 的 **Secret key**(在 Supabase 後台「API Keys → Publishable and secret API keys」那頁,`sb_secret_...` 開頭那把,不是 Publishable key),屆時會再新增 `SUPABASE_SERVICE_ROLE_KEY` 這個環境變數,一樣只給後端用。
+### LINE 自動追蹤功能設定(Phase 3)
+
+1. **跑資料庫 migration**:Supabase 後台「SQL Editor」貼上並執行 [supabase/migrations/0011_line_integration.sql](supabase/migrations/0011_line_integration.sql) 的完整內容,會新增 `line_contacts`、`follow_up_templates`、`follow_ups` 三張表,以及 `clients` 表的 `line_user_id`/`line_linked_at` 兩個欄位。
+2. **設定 Vercel 環境變數**:在原有的基礎上,新增 `SUPABASE_SECRET_KEY` 跟 `CRON_SECRET`(兩個都不要加 `VITE_` 前綴),設定完要重新部署一次才會生效。
+3. **確認 Vercel Cron Job 有啟用**:`vercel.json` 裡已經設定 `crons`(每天台灣時間早上 10 點,即 UTC 02:00,觸發一次)。**Vercel 的 Cron Jobs 功能在 Hobby(免費)方案下有限制**(通常一天只能觸發一次、且觸發時間不完全準時),如果帳號目前是 Hobby 方案,可以先用這個限制內的頻率測試;之後如果需要更頻繁或更準時的發送,才需要考慮升級方案。可以到 Vercel 專案的「Settings → Cron Jobs」頁面確認這個排程有沒有被正確讀取、啟用。
+4. **綁定客戶的 LINE**:客戶要先加官方帳號好友、傳過一句話,才會出現在待配對名單裡。到該客戶的「客戶詳情」頁面,LINE 區塊點「選擇 LINE 聯絡人」,從清單(依最後一則訊息內容跟時間辨認)點選正確的人即可完成綁定,**不需要客戶輸入任何代碼**。
+5. **建立自動追蹤**:客戶頁面「LINE 自動追蹤」區塊會列出目前啟用中的訊息模板(預設 3/7/30 天各一則,可以在「設定」頁面修改文字、天數、啟用狀態),勾選要排的時間(可複選)或自訂日期,按「建立 LINE 追蹤」,每個勾選項目會各自建立一筆獨立的排程,其中一筆失敗或被取消不會影響其他筆。
+6. **測試**:建立一筆排程時,把日期設成今天或更早,再手動觸發一次 Cron(可以到 Vercel 後台該 Cron Job 的頁面手動 Trigger,或用 `curl -H "Authorization: Bearer <CRON_SECRET>" https://你的網址/api/cron/send-follow-ups` 測試),確認客戶頁面該筆排程狀態變成「已發送」、且真的收到 LINE 訊息。
+
+以上所有功能都不會動到既有的客戶資料、到店紀錄、儲值、商品銷售等頁面與資料表,`line_user_id` 沒有綁定的客戶,`follow_ups` 也不會被建立或發送。
 
 ## 第一次設定步驟
 

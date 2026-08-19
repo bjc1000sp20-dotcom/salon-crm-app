@@ -13,6 +13,8 @@ import { sourceName } from '../lib/sources.js';
 import { SKIN_TYPES } from '../lib/intakeOptions.js';
 import { openLineContactPicker } from '../components/lineContactPicker.js';
 import { openAppointmentModal } from '../components/appointmentModal.js';
+import { listNotesForClient, createNote, updateNote, deleteNote } from '../lib/clientNotes.js';
+import { ensureDefaultTags, listTagIdsForClient, setClientTags, createTag } from '../lib/tags.js';
 import {
   unlinkClientLine,
   ensureDefaultFollowUpTemplates,
@@ -33,11 +35,18 @@ export async function renderClientDetail(app) {
 
   root.innerHTML = `<div class="screen"><div style="padding:40px;text-align:center;color:#9B8F7F;">載入中...</div></div>`;
 
-  const [client, balance, visits] = await Promise.all([
+  const [client, balance, visits, initialNotes, initialAllTags, initialClientTagIds] = await Promise.all([
     getClient(clientId),
     getClientBalance(clientId),
     listVisitsForClient(clientId),
+    listNotesForClient(clientId),
+    ensureDefaultTags(app.salon.id),
+    listTagIdsForClient(clientId),
   ]);
+  let notes = initialNotes;
+  let allTags = initialAllTags;
+  let clientTagIds = initialClientTagIds;
+  let clientTags = allTags.filter((t) => clientTagIds.includes(t.id));
 
   const age = calcAge(client.birth_date);
   const initial = (client.name || '?').slice(0, 1);
@@ -61,7 +70,12 @@ export async function renderClientDetail(app) {
           </div>
         </div>
 
+        <div id="tag-warning-banner">${clientTags.length ? warningBannerHtml(clientTags) : ''}</div>
+
         ${signedSigUrl ? `<div class="field"><div class="field-label">簽名</div><img class="sig-static-img" src="${signedSigUrl}" alt="簽名" /></div>` : ''}
+
+        <div id="tags-section">${tagsSectionHtml(clientTags)}</div>
+        <div id="notes-section">${notesSectionHtml(notes)}</div>
 
         ${intakeSummaryHtml(client)}
 
@@ -105,7 +119,53 @@ export async function renderClientDetail(app) {
 
   loadLineSection(app, client);
 
-  document.querySelectorAll('.visit-card').forEach((el) => {
+  function renderTagsUI() {
+    document.getElementById('tag-warning-banner').innerHTML = clientTags.length ? warningBannerHtml(clientTags) : '';
+    document.getElementById('tags-section').innerHTML = tagsSectionHtml(clientTags);
+    document.getElementById('manage-tags-btn').onclick = () =>
+      openTagPickerModal(app, client, allTags, clientTagIds, (newAllTags, newTagIds) => {
+        allTags = newAllTags;
+        clientTagIds = newTagIds;
+        clientTags = allTags.filter((t) => clientTagIds.includes(t.id));
+        renderTagsUI();
+      });
+  }
+  renderTagsUI();
+
+  function renderNotesUI() {
+    document.getElementById('notes-section').innerHTML = notesSectionHtml(notes);
+    bindNotesEvents();
+  }
+  function bindNotesEvents() {
+    document.getElementById('add-note-btn').onclick = () =>
+      openNoteModal(null, async (body) => {
+        await createNote(app.salon.id, client.id, app.session.user.id, body);
+        notes = await listNotesForClient(client.id);
+        renderNotesUI();
+      });
+    document.querySelectorAll('.note-edit-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const n = notes.find((x) => x.id === btn.dataset.id);
+        if (!n) return;
+        openNoteModal(n.body, async (body) => {
+          await updateNote(n.id, body);
+          notes = await listNotesForClient(client.id);
+          renderNotesUI();
+        });
+      };
+    });
+    document.querySelectorAll('.note-delete-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('確定要刪除這筆備註嗎?')) return;
+        await deleteNote(btn.dataset.id);
+        notes = await listNotesForClient(client.id);
+        renderNotesUI();
+      };
+    });
+  }
+  bindNotesEvents();
+
+  document.querySelectorAll('#visits-list .visit-card').forEach((el) => {
     el.onclick = () => app.navigate('visitForm', { mode: 'edit', clientId: client.id, visitId: el.dataset.id });
   });
 
@@ -580,6 +640,161 @@ function openEditFollowUpModal(followUp, onSave) {
       return;
     }
     await onSave({ scheduled_at, message });
+    overlay.remove();
+  };
+}
+
+// ---------------- 客戶標籤 / 備註 ----------------
+
+function warningBannerHtml(tags) {
+  return `
+    <div class="analytics-block" style="background:#FBEFE7;border-color:#E8C9AE;margin:0 0 18px;">
+      <div style="font-weight:700;color:#B5533C;margin-bottom:6px;">⚠️ 此客戶有注意事項</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${tags.map((t) => `<span class="tag" style="background:#F5E3DC;color:#B5533C;">${escapeHtml(t.name)}</span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function tagsSectionHtml(tags) {
+  return `
+    <div class="analytics-block" style="margin:0 0 18px;">
+      <div class="analytics-title">客戶標籤</div>
+      ${
+        tags.length
+          ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">${tags
+              .map((t) => `<span class="tag">${escapeHtml(t.name)}</span>`)
+              .join('')}</div>`
+          : `<div class="empty-body" style="margin-bottom:10px;">還沒有標籤</div>`
+      }
+      <button type="button" class="secondary-btn" id="manage-tags-btn" style="margin-top:0;">管理標籤</button>
+    </div>
+  `;
+}
+
+function openTagPickerModal(app, client, allTags, selectedTagIds, onDone) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  let currentTags = allTags;
+  let selected = new Set(selectedTagIds);
+
+  function render() {
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-height:80vh;overflow-y:auto;">
+        <div class="modal-title">管理「${escapeHtml(client.name)}」的標籤</div>
+        <div id="tag-picker-list">
+          ${currentTags
+            .map(
+              (t) => `
+            <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <input type="checkbox" class="tag-picker-check" data-id="${t.id}" ${selected.has(t.id) ? 'checked' : ''} />
+              <span>${escapeHtml(t.name)}</span>
+            </label>`
+            )
+            .join('')}
+        </div>
+        <div class="field" style="margin-top:10px;">
+          <div class="field-label">新增標籤</div>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="new-tag-name" placeholder="例如:VIP" style="flex:1;" />
+            <button type="button" class="secondary-btn" id="add-tag-btn" style="width:auto;margin-top:0;padding:10px 16px;">新增</button>
+          </div>
+        </div>
+        <button class="primary-btn" id="tag-picker-save" style="margin-top:14px;">儲存</button>
+        <button class="secondary-btn" id="tag-picker-cancel">取消</button>
+      </div>
+    `;
+    bind();
+  }
+
+  function bind() {
+    overlay.querySelectorAll('.tag-picker-check').forEach((cb) => {
+      cb.onchange = () => {
+        if (cb.checked) selected.add(cb.dataset.id);
+        else selected.delete(cb.dataset.id);
+      };
+    });
+    document.getElementById('add-tag-btn').onclick = async () => {
+      const input = document.getElementById('new-tag-name');
+      const name = input.value.trim();
+      if (!name) return;
+      try {
+        const tag = await createTag(app.salon.id, name);
+        currentTags = [...currentTags, tag];
+        selected.add(tag.id);
+        render();
+      } catch (err) {
+        alert('新增標籤失敗:' + err.message);
+      }
+    };
+    document.getElementById('tag-picker-cancel').onclick = () => overlay.remove();
+    document.getElementById('tag-picker-save').onclick = async () => {
+      const saveBtn = document.getElementById('tag-picker-save');
+      saveBtn.disabled = true;
+      try {
+        const tagIds = Array.from(selected);
+        await setClientTags(app.salon.id, client.id, tagIds);
+        overlay.remove();
+        onDone(currentTags, tagIds);
+      } catch (err) {
+        alert('儲存失敗:' + err.message);
+        saveBtn.disabled = false;
+      }
+    };
+  }
+
+  document.body.appendChild(overlay);
+  render();
+}
+
+function notesSectionHtml(notes) {
+  return `
+    <div class="analytics-block" style="margin:0 0 18px;">
+      <div class="analytics-title">客戶備註</div>
+      <button type="button" class="secondary-btn" id="add-note-btn" style="margin-bottom:10px;">＋ 新增備註</button>
+      ${notes.length ? notes.map((n) => noteRowHtml(n)).join('') : `<div class="empty-body">還沒有備註</div>`}
+    </div>
+  `;
+}
+
+function noteRowHtml(n) {
+  return `
+    <div class="visit-card" data-id="${n.id}" style="margin-bottom:8px;">
+      <div class="visit-date-row">
+        <span class="visit-date">${formatDateTime(n.created_at)}${n.updated_at ? '(已編輯)' : ''}</span>
+      </div>
+      <div class="visit-note">${escapeHtml(n.body)}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        <button type="button" class="tag note-edit-btn" data-id="${n.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+        <button type="button" class="tag note-delete-btn" data-id="${n.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">刪除</button>
+      </div>
+    </div>
+  `;
+}
+
+function openNoteModal(initialBody, onSave) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">${initialBody != null ? '編輯備註' : '新增備註'}</div>
+      <div class="field">
+        <textarea id="note-body" rows="4" placeholder="輸入備註內容">${escapeHtml(initialBody || '')}</textarea>
+      </div>
+      <button class="primary-btn" id="note-save" style="margin-top:10px;">儲存</button>
+      <button class="secondary-btn" id="note-cancel">取消</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('note-cancel').onclick = () => overlay.remove();
+  document.getElementById('note-save').onclick = async () => {
+    const body = document.getElementById('note-body').value.trim();
+    if (!body) {
+      alert('請輸入備註內容');
+      return;
+    }
+    await onSave(body);
     overlay.remove();
   };
 }

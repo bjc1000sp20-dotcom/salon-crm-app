@@ -16,6 +16,13 @@ import { openAppointmentModal } from '../components/appointmentModal.js';
 import { listNotesForClient, createNote, updateNote, deleteNote } from '../lib/clientNotes.js';
 import { ensureDefaultTags, listTagIdsForClient, setClientTags, createTag } from '../lib/tags.js';
 import {
+  listPackagesForClient,
+  createPackage,
+  updatePackage,
+  cancelPackage,
+  addPackageUsage,
+} from '../lib/packages.js';
+import {
   unlinkClientLine,
   ensureDefaultFollowUpTemplates,
   listFollowUpsForClient,
@@ -35,18 +42,20 @@ export async function renderClientDetail(app) {
 
   root.innerHTML = `<div class="screen"><div style="padding:40px;text-align:center;color:#9B8F7F;">載入中...</div></div>`;
 
-  const [client, balance, visits, initialNotes, initialAllTags, initialClientTagIds] = await Promise.all([
+  const [client, balance, visits, initialNotes, initialAllTags, initialClientTagIds, initialPackages] = await Promise.all([
     getClient(clientId),
     getClientBalance(clientId),
     listVisitsForClient(clientId),
     listNotesForClient(clientId),
     ensureDefaultTags(app.salon.id),
     listTagIdsForClient(clientId),
+    listPackagesForClient(clientId),
   ]);
   let notes = initialNotes;
   let allTags = initialAllTags;
   let clientTagIds = initialClientTagIds;
   let clientTags = allTags.filter((t) => clientTagIds.includes(t.id));
+  let packages = initialPackages;
 
   const age = calcAge(client.birth_date);
   const initial = (client.name || '?').slice(0, 1);
@@ -86,6 +95,8 @@ export async function renderClientDetail(app) {
           </div>
           <button class="secondary-btn" style="width:auto;margin-top:0;padding:10px 16px;" id="topup-btn">儲值</button>
         </div>
+
+        <div id="packages-section">${packagesSectionHtml(packages)}</div>
 
         <button class="primary-btn" id="add-visit-btn" style="margin-bottom:10px;">＋ 新增到店紀錄</button>
         <button class="secondary-btn" id="ledger-btn" style="margin-top:0;margin-bottom:10px;">查看儲值/扣款帳本</button>
@@ -164,6 +175,48 @@ export async function renderClientDetail(app) {
     });
   }
   bindNotesEvents();
+
+  function renderPackagesUI() {
+    document.getElementById('packages-section').innerHTML = packagesSectionHtml(packages);
+    bindPackagesEvents();
+  }
+  function bindPackagesEvents() {
+    document.getElementById('add-package-btn').onclick = () =>
+      openPackageModal(null, async (fields) => {
+        await createPackage(app.salon.id, client.id, app.session.user.id, fields);
+        packages = await listPackagesForClient(client.id);
+        renderPackagesUI();
+      });
+    document.querySelectorAll('.pkg-use-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        await addPackageUsage(app.salon.id, btn.dataset.id, app.session.user.id, {
+          used_date: new Date().toISOString().slice(0, 10),
+        });
+        packages = await listPackagesForClient(client.id);
+        renderPackagesUI();
+      };
+    });
+    document.querySelectorAll('.pkg-edit-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const p = packages.find((x) => x.id === btn.dataset.id);
+        if (!p) return;
+        openPackageModal(p, async (fields) => {
+          await updatePackage(p.id, fields);
+          packages = await listPackagesForClient(client.id);
+          renderPackagesUI();
+        });
+      };
+    });
+    document.querySelectorAll('.pkg-cancel-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('確定要取消這筆療程嗎?')) return;
+        await cancelPackage(btn.dataset.id);
+        packages = await listPackagesForClient(client.id);
+        renderPackagesUI();
+      };
+    });
+  }
+  bindPackagesEvents();
 
   document.querySelectorAll('#visits-list .visit-card').forEach((el) => {
     el.onclick = () => app.navigate('visitForm', { mode: 'edit', clientId: client.id, visitId: el.dataset.id });
@@ -796,6 +849,123 @@ function openNoteModal(initialBody, onSave) {
     }
     await onSave(body);
     overlay.remove();
+  };
+}
+
+// ---------------- 療程堂數 ----------------
+
+function packagesSectionHtml(packages) {
+  return `
+    <div class="analytics-block" style="margin:0 0 18px;">
+      <div class="analytics-title">療程</div>
+      ${
+        packages.filter((p) => p.status === 'active').length
+          ? packages
+              .filter((p) => p.status === 'active')
+              .map((p) => packageRowHtml(p))
+              .join('')
+          : `<div class="empty-body" style="margin-bottom:10px;">目前沒有進行中的療程</div>`
+      }
+      <button type="button" class="secondary-btn" id="add-package-btn" style="margin-top:10px;">＋ 新增療程</button>
+    </div>
+  `;
+}
+
+function packageRowHtml(p) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const low = p.remaining_sessions > 0 && p.remaining_sessions <= 2;
+  const expired = p.expire_date && p.expire_date < todayStr;
+  const usageDates = (p.package_usage || [])
+    .slice()
+    .sort((a, b) => (a.used_date < b.used_date ? 1 : -1))
+    .map((u) => u.used_date);
+  return `
+    <div class="visit-card" data-id="${p.id}" style="margin-bottom:8px;">
+      <div class="visit-date-row">
+        <span class="visit-date">${escapeHtml(p.package_name)}</span>
+        <span style="color:${p.remaining_sessions <= 0 ? '#B0A996' : low ? '#B5533C' : '#4E8B5C'};font-size:13px;font-weight:600;">
+          剩餘 ${p.remaining_sessions}／${p.total_sessions} 堂
+        </span>
+      </div>
+      <div class="visit-note">
+        購買日:${p.purchase_date}${p.expire_date ? ` ・ 到期日:<span style="${expired ? 'color:#B5533C;font-weight:600;' : ''}">${p.expire_date}${expired ? '(已到期)' : ''}</span>` : ''}
+      </div>
+      ${usageDates.length ? `<div class="visit-note">使用紀錄:${usageDates.join('、')}</div>` : ''}
+      <div class="visit-tags" style="margin-top:8px;">
+        ${
+          p.remaining_sessions > 0
+            ? `<button type="button" class="tag pkg-use-btn" data-id="${p.id}" style="cursor:pointer;border:none;background:#E7EFE4;color:#4E8B5C;">使用一堂</button>`
+            : ''
+        }
+        <button type="button" class="tag pkg-edit-btn" data-id="${p.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+        <button type="button" class="tag pkg-cancel-btn" data-id="${p.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">取消療程</button>
+      </div>
+    </div>
+  `;
+}
+
+function openPackageModal(pkg, onSave) {
+  const today = new Date().toISOString().slice(0, 10);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">${pkg ? '修改療程' : '新增療程'}</div>
+      <div class="field">
+        <div class="field-label">療程名稱</div>
+        <input type="text" id="pkg-name" value="${escapeAttr(pkg?.package_name || '')}" placeholder="例如:膠原課程" />
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">總堂數</div>
+          <input type="number" id="pkg-total" min="1" step="1" value="${pkg?.total_sessions || ''}" />
+        </div>
+        <div class="field">
+          <div class="field-label">價格(選填)</div>
+          <input type="number" id="pkg-price" min="0" step="1" value="${pkg?.price ?? ''}" />
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">購買日期</div>
+          <input type="date" id="pkg-purchase-date" value="${pkg?.purchase_date || today}" />
+        </div>
+        <div class="field">
+          <div class="field-label">到期日(選填)</div>
+          <input type="date" id="pkg-expire-date" value="${pkg?.expire_date || ''}" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">備註(選填)</div>
+        <textarea id="pkg-notes" rows="2">${escapeHtml(pkg?.notes || '')}</textarea>
+      </div>
+      <button class="primary-btn" id="pkg-save" style="margin-top:10px;">儲存</button>
+      <button class="secondary-btn" id="pkg-cancel">取消</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('pkg-cancel').onclick = () => overlay.remove();
+  document.getElementById('pkg-save').onclick = async () => {
+    const package_name = document.getElementById('pkg-name').value.trim();
+    const total_sessions = Number(document.getElementById('pkg-total').value);
+    const priceRaw = document.getElementById('pkg-price').value;
+    const price = priceRaw ? Number(priceRaw) : null;
+    const purchase_date = document.getElementById('pkg-purchase-date').value;
+    const expire_date = document.getElementById('pkg-expire-date').value || null;
+    const notes = document.getElementById('pkg-notes').value.trim();
+    if (!package_name || !total_sessions || !purchase_date) {
+      alert('請填寫療程名稱、總堂數、購買日期');
+      return;
+    }
+    const saveBtn = document.getElementById('pkg-save');
+    saveBtn.disabled = true;
+    try {
+      await onSave({ package_name, total_sessions, price, purchase_date, expire_date, notes });
+      overlay.remove();
+    } catch (err) {
+      alert('儲存失敗:' + err.message);
+      saveBtn.disabled = false;
+    }
   };
 }
 

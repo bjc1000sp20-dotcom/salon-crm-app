@@ -9,6 +9,7 @@ import {
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { SERVICES } from '../lib/services.js';
 import { SOURCES, sourceName } from '../lib/sources.js';
+import { listLowRemainingPackages, listExpiringPackages } from '../lib/packages.js';
 
 function pad2(n) {
   return (n < 10 ? '0' : '') + n;
@@ -49,12 +50,14 @@ export async function renderRevenue(app) {
 }
 
 async function loadContent(app, month) {
-  const [summary, analytics, visits, serviceMix, sourceMix] = await Promise.all([
+  const [summary, analytics, visits, serviceMix, sourceMix, lowRemainingPackages, expiringPackages] = await Promise.all([
     getMonthlySummary(app.salon.id, month),
     getMonthlyAnalytics(app.salon.id, month),
     listMonthlyVisits(app.salon.id, month),
     getServiceMix(app.salon.id, month),
     getSourceMix(app.salon.id, month),
+    listLowRemainingPackages(app.salon.id),
+    listExpiringPackages(app.salon.id),
   ]);
 
   const content = document.getElementById('revenue-content');
@@ -98,6 +101,7 @@ async function loadContent(app, month) {
     ${serviceMixHtml(serviceMix)}
     ${sourceMixHtml(sourceMix)}
     ${productSalesHtml(summary)}
+    ${packagesReminderHtml(lowRemainingPackages, expiringPackages)}
 
     <div class="section-label" style="margin:0 20px 8px;">當月消費明細</div>
     ${
@@ -126,6 +130,7 @@ async function loadContent(app, month) {
   document.getElementById('edit-rent-btn').onclick = () => openRentModal(app, month, summary.rent);
 
   document.getElementById('manage-product-sales-btn').onclick = () => app.navigate('productSales');
+  document.getElementById('manage-packages-btn').onclick = () => app.navigate('packages');
 }
 
 function analyticsHtml(a) {
@@ -246,6 +251,25 @@ function productSalesHtml(summary) {
       </div>
       <div class="field-hint" style="margin:10px 0 14px;">佔總營業額 ${revenuePct}% ・ 佔總淨利潤 ${profitPct}%</div>
       <button class="secondary-btn" id="manage-product-sales-btn" style="margin-top:0;">商品銷售明細 / 新增</button>
+    </div>
+  `;
+}
+
+function packagesReminderHtml(lowRemaining, expiring) {
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">療程管理</div>
+      <div class="revenue-nums" style="margin-top:0;">
+        <div class="revenue-num-block">
+          <div class="revenue-num-label">即將用完</div>
+          <div class="revenue-num-value" style="color:${lowRemaining.length ? '#B5533C' : 'var(--text)'};font-size:16px;">${lowRemaining.length} 位</div>
+        </div>
+        <div class="revenue-num-block">
+          <div class="revenue-num-label">即將到期</div>
+          <div class="revenue-num-value" style="color:${expiring.length ? '#B5533C' : 'var(--text)'};font-size:16px;">${expiring.length} 位</div>
+        </div>
+      </div>
+      <button class="secondary-btn" id="manage-packages-btn" style="margin-top:14px;">查看療程明細</button>
     </div>
   `;
 }

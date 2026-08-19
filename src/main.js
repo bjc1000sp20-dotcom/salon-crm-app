@@ -15,6 +15,7 @@ import { renderVisitMaterialCost } from './pages/visitMaterialCost.js';
 import { renderLedger } from './pages/ledger.js';
 import { renderRevenue } from './pages/revenue.js';
 import { renderProductSales } from './pages/productSales.js';
+import { renderPackages } from './pages/packages.js';
 import { renderSettings } from './pages/settings.js';
 
 const root = document.getElementById('app');
@@ -70,6 +71,8 @@ const app = {
         return renderRevenue(this);
       case 'productSales':
         return renderProductSales(this);
+      case 'packages':
+        return renderPackages(this);
       case 'settings':
         return renderSettings(this);
       default:

@@ -1,6 +1,7 @@
 import { getClientBalance } from '../lib/data.js';
 import { serviceById } from '../lib/services.js';
 import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.js';
+import { paymentMethodName } from '../lib/paymentMethods.js';
 
 // 每次到店都會看到這一頁(不只第一次)。刻意不接收、不顯示材料費——
 // 這個階段材料費根本還沒被輸入(draft 裡沒有這個欄位),不是只用 CSS 藏起來。
@@ -33,11 +34,16 @@ export async function renderVisitConfirm(app) {
             ${services.map((s) => `<span class="tag" style="background:${s.color}22;color:${s.color};">${s.name}</span>`).join('') || '<span class="visit-note">未選擇服務項目</span>'}
           </div>
           <div class="detail-row"><strong>消費金額:</strong>&nbsp;$${formatMoney(draft.amount)}</div>
-          <div class="detail-row"><strong>付款方式:</strong>&nbsp;${draft.payment_method === 'balance' ? '儲值金扣款' : '現金／其他'}</div>
+          <div class="detail-row"><strong>付款方式:</strong>&nbsp;${paymentMethodName(draft.payment_method)}</div>
           ${
             balanceBefore != null
               ? `<div class="detail-row"><strong>扣款前餘額:</strong>&nbsp;$${formatMoney(balanceBefore)}</div>
                  <div class="detail-row"><strong>扣款後餘額:</strong>&nbsp;$${formatMoney(balanceAfter)}</div>`
+              : ''
+          }
+          ${
+            (draft.checkoutProducts || []).length
+              ? `<div class="detail-row"><strong>另購買產品:</strong>&nbsp;${draft.checkoutProducts.map((p) => `${escapeHtml(p.item_name)}×${p.quantity}($${formatMoney(p.amount)})`).join('、')}</div>`
               : ''
           }
         </div>
@@ -89,4 +95,10 @@ function stripConfirmDraft(draft) {
 
 function formatMoney(n) {
   return Math.round(n || 0).toLocaleString('zh-TW');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
 }

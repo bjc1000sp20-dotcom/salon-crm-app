@@ -2,6 +2,7 @@ import {
   getClient,
   getClientBalance,
   listVisitsForClient,
+  listProductSalesForClient,
   getSignedUrl,
   createTopup,
 } from '../lib/data.js';
@@ -11,6 +12,7 @@ import { supabase } from '../supabaseClient.js';
 import { openProductSaleModal } from '../components/productSaleModal.js';
 import { sourceName } from '../lib/sources.js';
 import { SKIN_TYPES } from '../lib/intakeOptions.js';
+import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 import { openLineContactPicker } from '../components/lineContactPicker.js';
 import { openAppointmentModal } from '../components/appointmentModal.js';
 import { listNotesForClient, createNote, updateNote, deleteNote } from '../lib/clientNotes.js';
@@ -33,8 +35,9 @@ import {
   listAppointmentsForClient,
   updateAppointment,
   cancelAppointment,
-  completeAppointment,
+  getLineContactForClient,
 } from '../lib/lineIntegration.js';
+import { buildClientTimeline } from '../lib/timeline.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -42,20 +45,23 @@ export async function renderClientDetail(app) {
 
   root.innerHTML = `<div class="screen"><div style="padding:40px;text-align:center;color:#9B8F7F;">載入中...</div></div>`;
 
-  const [client, balance, visits, initialNotes, initialAllTags, initialClientTagIds, initialPackages] = await Promise.all([
-    getClient(clientId),
-    getClientBalance(clientId),
-    listVisitsForClient(clientId),
-    listNotesForClient(clientId),
-    ensureDefaultTags(app.salon.id),
-    listTagIdsForClient(clientId),
-    listPackagesForClient(clientId),
-  ]);
+  const [client, balance, visits, initialNotes, initialAllTags, initialClientTagIds, initialPackages, productSales] =
+    await Promise.all([
+      getClient(clientId),
+      getClientBalance(clientId),
+      listVisitsForClient(clientId),
+      listNotesForClient(clientId),
+      ensureDefaultTags(app.salon.id),
+      listTagIdsForClient(clientId),
+      listPackagesForClient(clientId),
+      listProductSalesForClient(clientId),
+    ]);
   let notes = initialNotes;
   let allTags = initialAllTags;
   let clientTagIds = initialClientTagIds;
   let clientTags = allTags.filter((t) => clientTagIds.includes(t.id));
   let packages = initialPackages;
+  const lineContact = client.line_user_id ? await getLineContactForClient(client.line_user_id) : null;
 
   const age = calcAge(client.birth_date);
   const initial = (client.name || '?').slice(0, 1);
@@ -80,6 +86,8 @@ export async function renderClientDetail(app) {
         </div>
 
         <div id="tag-warning-banner">${clientTags.length ? warningBannerHtml(clientTags) : ''}</div>
+
+        ${preVisitSummaryHtml({ visits, packages, productSales, clientTags, notes, lineContact })}
 
         ${signedSigUrl ? `<div class="field"><div class="field-label">簽名</div><img class="sig-static-img" src="${signedSigUrl}" alt="簽名" /></div>` : ''}
 
@@ -128,7 +136,7 @@ export async function renderClientDetail(app) {
   document.getElementById('product-sale-btn').onclick = () =>
     openProductSaleModal(app, client.id, () => app.navigate('clientDetail', { clientId: client.id }));
 
-  loadLineSection(app, client);
+  loadLineSection(app, client, { visits, notes, packages, productSales });
 
   function renderTagsUI() {
     document.getElementById('tag-warning-banner').innerHTML = clientTags.length ? warningBannerHtml(clientTags) : '';
@@ -245,6 +253,42 @@ export async function renderClientDetail(app) {
   };
 }
 
+function daysBetween(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((today - d) / (1000 * 60 * 60 * 24));
+}
+
+function preVisitSummaryHtml({ visits, packages, productSales, clientTags, notes, lineContact }) {
+  const lastVisit = visits[0];
+  const lastVisitServices = lastVisit
+    ? (lastVisit.visit_services || []).map((vs) => serviceById(vs.service_id)?.name).filter(Boolean).join('、')
+    : '';
+  const activePackages = packages.filter((p) => p.status === 'active' && p.remaining_sessions > 0);
+  const lastProduct = productSales[0];
+  const lastNote = notes[0];
+
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">服務前摘要</div>
+      <div class="detail-row"><strong>上次服務:</strong>&nbsp;${lastVisit ? `${escapeHtml(lastVisitServices || '未選擇服務項目')}(${lastVisit.visit_date})` : '還沒有到店紀錄'}</div>
+      ${lastVisit ? `<div class="detail-row"><strong>距離上次服務:</strong>&nbsp;${daysBetween(lastVisit.visit_date)} 天</div>` : ''}
+      <div class="detail-row"><strong>剩餘療程:</strong>&nbsp;${
+        activePackages.length ? activePackages.map((p) => `${escapeHtml(p.package_name)} ${p.remaining_sessions} 堂`).join('、') : '無進行中療程'
+      }</div>
+      <div class="detail-row"><strong>上次購買產品:</strong>&nbsp;${lastProduct ? `${escapeHtml(lastProduct.item_name)}(${lastProduct.sale_date})` : '無購買紀錄'}</div>
+      <div class="detail-row"><strong>客戶標籤:</strong>&nbsp;${clientTags.length ? clientTags.map((t) => escapeHtml(t.name)).join('／') : '無'}</div>
+      <div class="detail-row"><strong>最近備註:</strong>&nbsp;${lastNote ? escapeHtml(lastNote.body) : '無'}</div>
+      ${
+        lineContact?.last_message_text
+          ? `<div class="detail-row"><strong>客人最新 LINE 訊息:</strong>&nbsp;${escapeHtml(lineContact.last_message_text)}(${formatDateTime(lineContact.last_event_at)})</div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
 function intakeSummaryHtml(c) {
   const yn = (v) => (v === true ? '是' : v === false ? '否' : '未填');
   const skinTypeLabel = SKIN_TYPES.find((t) => t.id === c.skin_type)?.name || '未填';
@@ -326,7 +370,7 @@ function openTopupModal(app, client, currentBalance) {
 
 // ---------------- LINE 自動追蹤區塊 ----------------
 
-async function loadLineSection(app, client) {
+async function loadLineSection(app, client, { visits, notes, packages, productSales }) {
   const container = document.getElementById('line-section');
   if (!container) return;
 
@@ -346,7 +390,8 @@ async function loadLineSection(app, client) {
   let customRows = [];
 
   function render() {
-    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows, appointments);
+    const timelineEvents = buildClientTimeline({ client, visits, productSales, packages, appointments, followUps, notes });
+    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows, appointments) + timelineSectionHtml(timelineEvents);
     bindEvents();
   }
 
@@ -381,14 +426,6 @@ async function loadLineSection(app, client) {
         render();
       };
     });
-    container.querySelectorAll('.appt-complete-btn').forEach((btn) => {
-      btn.onclick = async () => {
-        await completeAppointment(btn.dataset.id);
-        appointments = await listAppointmentsForClient(client.id);
-        render();
-      };
-    });
-
     const linkBtn = document.getElementById('line-link-btn');
     if (linkBtn) {
       linkBtn.onclick = () =>
@@ -563,14 +600,70 @@ function lineSectionHtml(client, templates, followUps, customRows, appointments)
   `;
 }
 
+function timelineSectionHtml(events) {
+  return `
+    <div class="section-label">客戶歷程</div>
+    <div class="analytics-block">
+      ${
+        events.length
+          ? events.map((e) => timelineEventHtml(e)).join('')
+          : `<div class="empty-body">還沒有任何紀錄</div>`
+      }
+    </div>
+  `;
+}
+
+function timelineEventHtml(e) {
+  let label = '';
+  switch (e.type) {
+    case 'client_created':
+      label = '建立客戶卡';
+      break;
+    case 'visit': {
+      const names = (e.visit.visit_services || []).map((vs) => serviceById(vs.service_id)?.name).filter(Boolean).join('、');
+      label = `到店服務${names ? `:${names}` : ''}(＄${formatMoney(e.visit.amount)})`;
+      break;
+    }
+    case 'product':
+      label = `購買產品:${escapeHtml(e.sale.item_name)}`;
+      break;
+    case 'package_purchase':
+      label = `購買療程:${escapeHtml(e.pkg.package_name)}(共 ${e.pkg.total_sessions} 堂)`;
+      break;
+    case 'package_usage':
+      label = `使用療程:${escapeHtml(e.pkg.package_name)}`;
+      break;
+    case 'appointment':
+      label = `預約${e.appointment.service_note ? `:${escapeHtml(e.appointment.service_note)}` : ''}(${(APPOINTMENT_STATUS_LABEL[e.appointment.status] || {}).text || e.appointment.status})`;
+      break;
+    case 'followup_sent':
+      label = `已發送 LINE 追蹤:${escapeHtml(e.followUp.label)}`;
+      break;
+    case 'note':
+      label = `備註:${escapeHtml(e.note.body)}`;
+      break;
+    default:
+      label = e.type;
+  }
+  return `
+    <div class="detail-row"><strong>${e.date}</strong>&nbsp;${label}</div>
+  `;
+}
+
+const APPOINTMENT_STATUS_LABEL = {
+  scheduled: { text: '已預約', color: '#9B8F7F' },
+  confirmed: { text: '已確認', color: '#6B8CAE' },
+  checked_in: { text: '已到店', color: '#8FA688' },
+  completed: { text: '已完成', color: '#4E8B5C' },
+  cancelled: { text: '已取消', color: '#B0A996' },
+  no_show: { text: '未到', color: '#B5533C' },
+};
+const ACTIVE_APPOINTMENT_STATUSES = ['scheduled', 'confirmed', 'checked_in'];
+
 function appointmentRowHtml(a) {
-  const statusMap = {
-    scheduled: { text: '已排定', color: '#9B8F7F' },
-    completed: { text: '已完成', color: '#4E8B5C' },
-    cancelled: { text: '已取消', color: '#B0A996' },
-  };
-  const s = statusMap[a.status] || statusMap.scheduled;
+  const s = APPOINTMENT_STATUS_LABEL[a.status] || APPOINTMENT_STATUS_LABEL.scheduled;
   const timeLabel = a.appointment_time ? ` ${a.appointment_time.slice(0, 5)}` : '';
+  const isActive = ACTIVE_APPOINTMENT_STATUSES.includes(a.status);
   return `
     <div class="visit-card" data-id="${a.id}">
       <div class="visit-date-row">
@@ -578,10 +671,14 @@ function appointmentRowHtml(a) {
         <span style="color:${s.color};font-size:13px;font-weight:600;">${s.text}</span>
       </div>
       ${
-        a.status === 'scheduled'
+        a.deposit_amount
+          ? `<div class="visit-note">訂金:$${formatMoney(a.deposit_amount)}(${a.deposit_paid ? '已付款' : '未付款'})</div>`
+          : ''
+      }
+      ${
+        isActive
           ? `<div class="visit-tags" style="margin-top:8px;">
                <button type="button" class="tag appt-edit-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">修改</button>
-               <button type="button" class="tag appt-complete-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#E7EFE4;color:#4E8B5C;">標記完成</button>
                <button type="button" class="tag appt-cancel-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">取消</button>
              </div>`
           : ''
@@ -608,6 +705,33 @@ function openEditAppointmentModal(appt, onSave) {
         <div class="field-label">服務項目</div>
         <input type="text" id="edit-appt-service" value="${escapeAttr(appt.service_note || '')}" />
       </div>
+      <div class="field">
+        <div class="field-label">預約狀態</div>
+        <select id="edit-appt-status">
+          ${Object.entries(APPOINTMENT_STATUS_LABEL)
+            .map(([value, s]) => `<option value="${value}" ${appt.status === value ? 'selected' : ''}>${s.text}</option>`)
+            .join('')}
+        </select>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">訂金金額(選填)</div>
+          <input type="number" id="edit-appt-deposit-amount" min="0" step="1" value="${appt.deposit_amount ?? ''}" />
+        </div>
+        <div class="field">
+          <div class="field-label">付款方式</div>
+          <select id="edit-appt-deposit-method">
+            <option value="">未指定</option>
+            ${PAYMENT_METHODS.filter((m) => m.id !== 'balance')
+              .map((m) => `<option value="${m.id}" ${appt.deposit_payment_method === m.id ? 'selected' : ''}>${m.name}</option>`)
+              .join('')}
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:6px 0 10px;">
+        <input type="checkbox" id="edit-appt-deposit-paid" ${appt.deposit_paid ? 'checked' : ''} />
+        <span>訂金已付款</span>
+      </label>
       <div class="field-hint">改期後,還沒發送的預約提醒會自動改成對應的新日期。</div>
       <button class="primary-btn" id="edit-appt-save" style="margin-top:10px;">儲存</button>
       <button class="secondary-btn" id="edit-appt-cancel">取消</button>
@@ -619,11 +743,19 @@ function openEditAppointmentModal(appt, onSave) {
     const appointment_date = document.getElementById('edit-appt-date').value;
     const appointment_time = document.getElementById('edit-appt-time').value || null;
     const service_note = document.getElementById('edit-appt-service').value.trim();
+    const status = document.getElementById('edit-appt-status').value;
+    const depositAmountRaw = document.getElementById('edit-appt-deposit-amount').value;
+    const deposit_amount = depositAmountRaw ? Number(depositAmountRaw) : null;
+    const deposit_payment_method = document.getElementById('edit-appt-deposit-method').value || null;
+    const deposit_paid = document.getElementById('edit-appt-deposit-paid').checked;
     if (!appointment_date) {
       alert('請選擇預約日期');
       return;
     }
-    await onSave({ appointment_date, appointment_time, service_note });
+    const fields = { appointment_date, appointment_time, service_note, status, deposit_amount, deposit_payment_method, deposit_paid };
+    if (deposit_paid && !appt.deposit_paid) fields.deposit_paid_at = new Date().toISOString();
+    if (!deposit_paid) fields.deposit_paid_at = null;
+    await onSave(fields);
     overlay.remove();
   };
 }

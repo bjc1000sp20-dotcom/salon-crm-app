@@ -1,4 +1,5 @@
 import { ensureDefaultFollowUpTemplates, createAppointmentWithReminders, addDaysToToday } from '../lib/lineIntegration.js';
+import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 
 // 新增預約 + 一次勾選要建立的「預約前提醒」與「術後追蹤」,一個按鈕全部建立完成
 export async function openAppointmentModal(app, client, onDone) {
@@ -40,6 +41,26 @@ export async function openAppointmentModal(app, client, onDone) {
         <div class="field-label">服務項目</div>
         <input type="text" id="appt-service" placeholder="例如:深層清潔" />
       </div>
+
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">訂金金額(選填)</div>
+          <input type="number" id="appt-deposit-amount" min="0" step="1" placeholder="0" />
+        </div>
+        <div class="field">
+          <div class="field-label">付款方式</div>
+          <select id="appt-deposit-method">
+            <option value="">未指定</option>
+            ${PAYMENT_METHODS.filter((m) => m.id !== 'balance')
+              .map((m) => `<option value="${m.id}">${m.name}</option>`)
+              .join('')}
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;margin:0 0 10px;">
+        <input type="checkbox" id="appt-deposit-paid" />
+        <span>訂金已付款</span>
+      </label>
 
       <div class="field-label" style="margin-top:14px;">預約前提醒</div>
       ${reminderTemplates
@@ -119,6 +140,10 @@ export async function openAppointmentModal(app, client, onDone) {
       const appointment_date = document.getElementById('appt-date').value;
       const appointment_time = document.getElementById('appt-time').value || null;
       const service_note = document.getElementById('appt-service').value.trim();
+      const depositAmountRaw = document.getElementById('appt-deposit-amount').value;
+      const deposit_amount = depositAmountRaw ? Number(depositAmountRaw) : null;
+      const deposit_payment_method = document.getElementById('appt-deposit-method').value || null;
+      const deposit_paid = document.getElementById('appt-deposit-paid').checked;
       if (!appointment_date) {
         alert('請選擇預約日期');
         return;
@@ -138,6 +163,9 @@ export async function openAppointmentModal(app, client, onDone) {
           appointment_date,
           appointment_time,
           service_note,
+          deposit_amount,
+          deposit_paid,
+          deposit_payment_method,
           reminderOffsets,
           customReminders: validCustom.map((r) => ({ offset_days: r.days, message: r.message.trim() })),
           aftercareTemplateIds,

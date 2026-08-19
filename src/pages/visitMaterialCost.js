@@ -5,8 +5,11 @@ import {
   uploadConsentSignature,
   uploadConfirmationSignature,
   updateClient,
+  createProductSale,
 } from '../lib/data.js';
 import { serviceById } from '../lib/services.js';
+import { paymentMethodName } from '../lib/paymentMethods.js';
+import { addPackageUsage } from '../lib/packages.js';
 
 // 店主自己看的最後一步,客人不用在場。按下「完成並儲存」才會真正把資料寫進資料庫
 // (包含到店紀錄、照片、簽名檔案,以及如果是第一次到店的話同時把同意書簽名存進客戶卡)。
@@ -29,7 +32,13 @@ export function renderVisitMaterialCost(app) {
             ${services.map((s) => `<span class="tag" style="background:${s.color}22;color:${s.color};">${s.name}</span>`).join('')}
           </div>
           <div class="detail-row"><strong>消費金額:</strong>&nbsp;$${formatMoney(draft.amount)}</div>
-          <div class="detail-row"><strong>付款方式:</strong>&nbsp;${draft.payment_method === 'balance' ? '儲值金扣款' : '現金／其他'}</div>
+          <div class="detail-row"><strong>付款方式:</strong>&nbsp;${paymentMethodName(draft.payment_method)}</div>
+          ${
+            (draft.checkoutProducts || []).length
+              ? `<div class="detail-row"><strong>另購買產品:</strong>&nbsp;${draft.checkoutProducts.map((p) => `${escapeHtml(p.item_name)}×${p.quantity}`).join('、')}</div>`
+              : ''
+          }
+          ${draft.packageId ? `<div class="detail-row"><strong>本次使用:</strong>&nbsp;療程 1 堂</div>` : ''}
         </div>
 
         <div class="field">
@@ -65,6 +74,23 @@ export function renderVisitMaterialCost(app) {
         await uploadVisitPhoto(app.salon.id, clientId, visit.id, file);
       }
 
+      for (const p of draft.checkoutProducts || []) {
+        await createProductSale(app.salon.id, clientId, app.session.user.id, {
+          item_name: p.item_name,
+          amount: p.amount,
+          cost: p.cost,
+          quantity: p.quantity,
+          sale_date: draft.visit_date,
+        });
+      }
+
+      if (draft.packageId) {
+        await addPackageUsage(app.salon.id, draft.packageId, app.session.user.id, {
+          visit_id: visit.id,
+          used_date: draft.visit_date,
+        });
+      }
+
       if (draft.confirmationSignatureBlob) {
         const path = await uploadConfirmationSignature(app.salon.id, clientId, visit.id, draft.confirmationSignatureBlob);
         await updateVisit(visit.id, { confirmation_signature_url: path });
@@ -92,4 +118,10 @@ export function renderVisitMaterialCost(app) {
 
 function formatMoney(n) {
   return Math.round(n || 0).toLocaleString('zh-TW');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
 }

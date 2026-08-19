@@ -35,6 +35,13 @@ export async function matchLineContact(contactId, lineUserId, clientId, salonId)
   if (contactErr) throw contactErr;
 }
 
+export async function getLineContactForClient(lineUserId) {
+  if (!lineUserId) return null;
+  const { data, error } = await supabase.from('line_contacts').select('*').eq('line_user_id', lineUserId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export async function unlinkClientLine(clientId) {
   const { error } = await supabase
     .from('clients')
@@ -196,20 +203,33 @@ export async function cancelAppointment(id) {
   if (followErr) throw followErr;
 }
 
-export async function completeAppointment(id) {
-  const { error } = await supabase.from('appointments').update({ status: 'completed' }).eq('id', id);
-  if (error) throw error;
-}
-
 // 一次建立:1 筆預約 + 勾選的預約前提醒 + 勾選的既有術後追蹤,每一筆各自獨立寫入 follow_ups,
 // 其中一筆失敗或之後被取消,不會影響其他筆
 export async function createAppointmentWithReminders(
   salonId,
   clientId,
   userId,
-  { appointment_date, appointment_time, service_note, reminderOffsets = [], customReminders = [], aftercareTemplateIds = [] }
+  {
+    appointment_date,
+    appointment_time,
+    service_note,
+    deposit_amount,
+    deposit_paid,
+    deposit_payment_method,
+    reminderOffsets = [],
+    customReminders = [],
+    aftercareTemplateIds = [],
+  }
 ) {
-  const appt = await createAppointment(salonId, clientId, userId, { appointment_date, appointment_time, service_note });
+  const appt = await createAppointment(salonId, clientId, userId, {
+    appointment_date,
+    appointment_time,
+    service_note,
+    deposit_amount: deposit_amount ?? null,
+    deposit_paid: deposit_paid ?? false,
+    deposit_payment_method: deposit_payment_method ?? null,
+    deposit_paid_at: deposit_paid ? new Date().toISOString() : null,
+  });
 
   const templates = await listFollowUpTemplates(salonId);
   const appointmentTemplates = templates.filter((t) => t.kind === 'appointment_reminder');

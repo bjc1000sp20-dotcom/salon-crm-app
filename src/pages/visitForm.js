@@ -9,6 +9,8 @@ import {
   getClientBalance,
 } from '../lib/data.js';
 import { serviceGridHtml, bindServiceGrid } from '../components/serviceMultiSelect.js';
+import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
+import { listPackagesForClient } from '../lib/packages.js';
 
 // 建立模式(新增到店紀錄)不會在這一頁直接存檔——填完基本資料後,
 // 會先進「同意書」(只有第一次到店才會出現)、「消費確認簽名」,
@@ -24,6 +26,11 @@ export async function renderVisitForm(app) {
   const removedPhotoIds = new Set();
   // newFiles: { file, previewUrl } — 如果是從下一步「上一步」回來的,把 draft 裡的 File 物件還原成縮圖
   const newFiles = (draft?.newFiles || []).map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
+
+  // 順便購買產品/使用療程堂數只在「新增」流程提供(編輯舊紀錄維持原本單頁直接存檔的簡單做法,不重跑這些)
+  const allPackages = isEdit ? [] : await listPackagesForClient(clientId);
+  const clientPackages = allPackages.filter((p) => p.status === 'active' && p.remaining_sessions > 0);
+  let checkoutProducts = draft?.checkoutProducts || [];
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -64,11 +71,35 @@ export async function renderVisitForm(app) {
         <div class="field">
           <div class="field-label">付款方式</div>
           <div class="service-grid">
-            <button type="button" class="service-chip pay-chip${(draft?.payment_method ?? visit?.payment_method ?? 'cash') === 'cash' ? ' on' : ''}" data-pm="cash" style="${(draft?.payment_method ?? visit?.payment_method ?? 'cash') === 'cash' ? 'background:#3A332B;' : ''}">現金／其他</button>
-            <button type="button" class="service-chip pay-chip${(draft?.payment_method ?? visit?.payment_method) === 'balance' ? ' on' : ''}" data-pm="balance" style="${(draft?.payment_method ?? visit?.payment_method) === 'balance' ? 'background:#3A332B;' : ''}">儲值金扣款</button>
+            ${PAYMENT_METHODS.map((m) => {
+              const current = draft?.payment_method ?? visit?.payment_method ?? 'cash';
+              return `<button type="button" class="service-chip pay-chip${current === m.id ? ' on' : ''}" data-pm="${m.id}" style="${current === m.id ? 'background:#3A332B;' : ''}">${m.name}</button>`;
+            }).join('')}
           </div>
           <div id="balance-warn"></div>
         </div>
+
+        ${
+          !isEdit
+            ? `<div class="field">
+                <div class="field-label">順便購買產品(選填)</div>
+                <div id="checkout-products-list"></div>
+                <button type="button" class="secondary-btn" id="add-checkout-product-btn" style="margin-top:0;">＋ 新增產品</button>
+              </div>`
+            : ''
+        }
+
+        ${
+          !isEdit && clientPackages.length
+            ? `<div class="field">
+                <div class="field-label">使用療程堂數(選填)</div>
+                <select id="f-package">
+                  <option value="">不使用</option>
+                  ${clientPackages.map((p) => `<option value="${p.id}" ${draft?.packageId === p.id ? 'selected' : ''}>${escapeHtml(p.package_name)}(剩餘 ${p.remaining_sessions} 堂)</option>`).join('')}
+                </select>
+              </div>`
+            : ''
+        }
 
         <div class="field">
           <div class="field-label">這次來的皮膚狀況</div>
@@ -139,6 +170,52 @@ export async function renderVisitForm(app) {
     }
   }
   if (paymentMethod === 'balance') checkBalanceWarning();
+
+  // ---- 順便購買產品 / 使用療程堂數(只在新增流程) ----
+  if (!isEdit) {
+    const productsListEl = document.getElementById('checkout-products-list');
+    function renderCheckoutProducts() {
+      productsListEl.innerHTML = checkoutProducts.length
+        ? checkoutProducts
+            .map(
+              (p, idx) => `
+        <div class="visit-list-row" data-idx="${idx}" style="align-items:flex-start;">
+          <div class="vlr-left">
+            <div class="vlr-name">${escapeHtml(p.item_name)} × ${p.quantity}</div>
+            <div class="vlr-date">成本 $${formatMoney(p.cost)}</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="vlr-amount">$${formatMoney(p.amount)}</div>
+            <button type="button" class="btn-ghost remove-checkout-product-btn" data-idx="${idx}" style="margin-top:4px;font-size:12px;padding:4px 10px;">移除</button>
+          </div>
+        </div>`
+            )
+            .join('')
+        : `<div class="field-hint">還沒有加入產品</div>`;
+      productsListEl.querySelectorAll('.remove-checkout-product-btn').forEach((btn) => {
+        btn.onclick = () => {
+          checkoutProducts.splice(Number(btn.dataset.idx), 1);
+          renderCheckoutProducts();
+        };
+      });
+    }
+    renderCheckoutProducts();
+
+    document.getElementById('add-checkout-product-btn').onclick = () => {
+      openCheckoutProductModal((row) => {
+        checkoutProducts.push(row);
+        renderCheckoutProducts();
+      });
+    };
+  }
+
+  let selectedPackageId = draft?.packageId || null;
+  const packageSelect = document.getElementById('f-package');
+  if (packageSelect) {
+    packageSelect.onchange = () => {
+      selectedPackageId = packageSelect.value || null;
+    };
+  }
 
   // ---- 照片 ----
   const photoGrid = document.getElementById('photo-grid');
@@ -255,7 +332,13 @@ export async function renderVisitForm(app) {
     saveBtn.textContent = '處理中...';
     try {
       const client = await getClient(clientId);
-      const nextDraft = { ...commonFields, serviceIds: selectedIds, newFiles: newFiles.map((e) => e.file) };
+      const nextDraft = {
+        ...commonFields,
+        serviceIds: selectedIds,
+        newFiles: newFiles.map((e) => e.file),
+        checkoutProducts,
+        packageId: selectedPackageId,
+      };
       const nextView = client.consent_signature_url ? 'visitConfirm' : 'visitConsent';
       app.navigate(nextView, { clientId, draft: nextDraft });
     } catch (err) {
@@ -267,6 +350,56 @@ export async function renderVisitForm(app) {
   };
 }
 
+function openCheckoutProductModal(onAdd) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">新增產品</div>
+      <div class="field">
+        <div class="field-label">品項</div>
+        <input type="text" id="cop-item" placeholder="例如:保濕精華液" />
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">售價</div>
+          <input type="number" id="cop-amount" min="0" step="1" placeholder="0" />
+        </div>
+        <div class="field">
+          <div class="field-label">成本</div>
+          <input type="number" id="cop-cost" min="0" step="1" placeholder="0" />
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">數量</div>
+        <input type="number" id="cop-quantity" min="1" step="1" value="1" />
+      </div>
+      <button class="primary-btn" id="cop-confirm">加入</button>
+      <button class="secondary-btn" id="cop-cancel">取消</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('cop-cancel').onclick = () => overlay.remove();
+  document.getElementById('cop-confirm').onclick = () => {
+    const item_name = document.getElementById('cop-item').value.trim();
+    const amount = Number(document.getElementById('cop-amount').value) || 0;
+    const cost = Number(document.getElementById('cop-cost').value) || 0;
+    const quantity = Number(document.getElementById('cop-quantity').value) || 1;
+    if (!item_name) {
+      alert('請輸入品項名稱');
+      return;
+    }
+    onAdd({ item_name, amount, cost, quantity });
+    overlay.remove();
+  };
+}
+
 function formatMoney(n) {
   return Math.round(n || 0).toLocaleString('zh-TW');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
 }

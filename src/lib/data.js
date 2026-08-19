@@ -3,6 +3,18 @@ import { compressImage } from './photoCompress.js';
 
 // ---------------- 客戶 ----------------
 
+// 輕量查詢:已綁定 LINE 的客戶,給「發送測試訊息」這種小型選擇器用
+export async function listClientsWithLine(salonId) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, line_user_id')
+    .eq('salon_id', salonId)
+    .not('line_user_id', 'is', null)
+    .order('name');
+  if (error) throw error;
+  return data;
+}
+
 // 輕量的姓名搜尋,給「從 LINE 聯絡人反向挑客戶」這種小型選擇器用,不用抓每位客戶的完整統計資料
 export async function searchClientsByName(salonId, query) {
   const { data, error } = await supabase

@@ -41,6 +41,7 @@ import { buildClientTimeline } from '../lib/timeline.js';
 import { listArchivePhotos, uploadArchivePhoto } from '../lib/clientArchive.js';
 import { openArchivePhotoViewer } from '../components/archivePhotoViewer.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
+import { getBirthdayFollowUpForClient, sendBirthdayNow, skipBirthdayThisYear } from '../lib/birthdays.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -382,13 +383,14 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   const container = document.getElementById('line-section');
   if (!container) return;
 
-  let templates, followUps, appointments, messageTemplates;
+  let templates, followUps, appointments, messageTemplates, birthdayFollowUp;
   try {
-    [templates, followUps, appointments, messageTemplates] = await Promise.all([
+    [templates, followUps, appointments, messageTemplates, birthdayFollowUp] = await Promise.all([
       ensureDefaultFollowUpTemplates(app.salon.id),
       listFollowUpsForClient(client.id),
       listAppointmentsForClient(client.id),
       ensureDefaultMessageTemplates(app.salon.id),
+      client.birth_date ? getBirthdayFollowUpForClient(client.id) : Promise.resolve(null),
     ]);
   } catch (err) {
     console.error(err);
@@ -420,12 +422,59 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   function render() {
     const timelineEvents = buildClientTimeline({ client, visits, productSales, packages, appointments, followUps, notes });
     container.innerHTML =
-      lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact) +
+      lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact, birthdayFollowUp) +
       timelineSectionHtml(timelineEvents);
     bindEvents();
   }
 
   function bindEvents() {
+    const linkBirthdayBtn = document.getElementById('birthday-link-line-btn');
+    if (linkBirthdayBtn) {
+      linkBirthdayBtn.onclick = () =>
+        openLineContactPicker(app, client, () => app.navigate('clientDetail', { clientId: client.id }));
+    }
+    const sendBirthdayBtn = document.getElementById('birthday-send-now-btn');
+    if (sendBirthdayBtn) {
+      sendBirthdayBtn.onclick = async () => {
+        sendBirthdayBtn.disabled = true;
+        sendBirthdayBtn.textContent = '發送中...';
+        try {
+          await sendBirthdayNow(app, client, null);
+          birthdayFollowUp = await getBirthdayFollowUpForClient(client.id);
+          render();
+        } catch (err) {
+          alert('發送失敗:' + err.message);
+          sendBirthdayBtn.disabled = false;
+          sendBirthdayBtn.textContent = '立即發送';
+        }
+      };
+    }
+    const skipBirthdayBtn = document.getElementById('birthday-skip-btn');
+    if (skipBirthdayBtn) {
+      skipBirthdayBtn.onclick = async () => {
+        if (!confirm('確定今年不發送生日訊息給這位客戶嗎?')) return;
+        await skipBirthdayThisYear(app.salon.id, client);
+        birthdayFollowUp = await getBirthdayFollowUpForClient(client.id);
+        render();
+      };
+    }
+    const resendBirthdayBtn = document.getElementById('birthday-resend-btn');
+    if (resendBirthdayBtn) {
+      resendBirthdayBtn.onclick = async () => {
+        resendBirthdayBtn.disabled = true;
+        resendBirthdayBtn.textContent = '發送中...';
+        try {
+          await sendBirthdayNow(app, client, birthdayFollowUp);
+          birthdayFollowUp = await getBirthdayFollowUpForClient(client.id);
+          render();
+        } catch (err) {
+          alert('發送失敗:' + err.message);
+          resendBirthdayBtn.disabled = false;
+          resendBirthdayBtn.textContent = '重新發送';
+        }
+      };
+    }
+
     const addApptBtn = document.getElementById('add-appointment-btn');
     if (addApptBtn) {
       addApptBtn.onclick = () =>
@@ -669,7 +718,58 @@ function messageTemplateOptionsHtml(messageTemplates) {
   `;
 }
 
-function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact) {
+function birthdayStatusHtml(client, birthdayFollowUp) {
+  if (!client.birth_date) return '';
+
+  const today = new Date();
+  const birthMonth = Number(client.birth_date.slice(5, 7));
+  const isThisMonth = birthMonth === today.getMonth() + 1;
+  const pastAutoSeedWindow = today.getDate() > 3;
+
+  const rows = [];
+
+  if (client.birthday_reminder_enabled && !client.line_user_id) {
+    rows.push(`
+      <div class="field-hint" style="color:#B5533C;margin-bottom:8px;">⚠️ 已開啟生日提醒,但尚未綁定 LINE,無法自動發送生日訊息</div>
+      <button type="button" class="secondary-btn" id="birthday-link-line-btn" style="margin-top:0;">綁定 LINE</button>
+    `);
+  } else if (
+    isThisMonth &&
+    client.birthday_reminder_enabled &&
+    client.line_user_id &&
+    !birthdayFollowUp &&
+    pastAutoSeedWindow
+  ) {
+    rows.push(`
+      <div class="field-hint" style="margin-bottom:8px;">🎂 這位客戶本月生日,今年還沒發送生日訊息(已過自動發送時間)</div>
+      <button type="button" class="secondary-btn" id="birthday-send-now-btn" style="margin-top:0;">立即發送</button>
+      <button type="button" class="secondary-btn" id="birthday-skip-btn" style="margin-top:0;">不補發,今年略過</button>
+    `);
+  } else if (birthdayFollowUp) {
+    const statusMap = {
+      pending: { text: '待發送', color: '#9B8F7F' },
+      sent: { text: '已發送', color: '#4E8B5C' },
+      failed: { text: '發送失敗', color: '#B5533C' },
+      skipped: { text: '今年已略過', color: '#B0A996' },
+    };
+    const s = statusMap[birthdayFollowUp.status] || statusMap.pending;
+    rows.push(`<div class="detail-row">今年生日訊息:<span style="color:${s.color};font-weight:600;">${s.text}</span></div>`);
+    if (birthdayFollowUp.status === 'failed') {
+      rows.push(`<button type="button" class="secondary-btn" id="birthday-resend-btn" style="margin-top:8px;">重新發送</button>`);
+    }
+  }
+
+  if (!rows.length) return '';
+
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">生日提醒</div>
+      ${rows.join('')}
+    </div>
+  `;
+}
+
+function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact, birthdayFollowUp) {
   return `
     <div class="analytics-block">
       <div class="analytics-title">LINE</div>
@@ -691,6 +791,8 @@ function lineSectionHtml(client, templates, followUps, customRows, appointments,
              <button class="secondary-btn" id="line-link-btn" style="margin-top:8px;">選擇 LINE 聯絡人</button>`
       }
     </div>
+
+    ${birthdayStatusHtml(client, birthdayFollowUp)}
 
     <div class="analytics-block">
       <div class="analytics-title">預約</div>

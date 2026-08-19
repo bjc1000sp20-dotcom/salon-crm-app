@@ -28,6 +28,17 @@ export async function listClientsWithMeta(salonId) {
   const firstError = [clientsErr, visitsErr, psErr, ctErr, tagsErr, pkgErr, fuErr, noteErr].find(Boolean);
   if (firstError) throw firstError;
 
+  const currentYear = new Date().getFullYear();
+  const { data: birthdayFollowUps, error: bfuErr } = await supabase
+    .from('follow_ups')
+    .select('client_id, status')
+    .eq('salon_id', salonId)
+    .eq('kind', 'birthday')
+    .eq('birthday_year', currentYear);
+  if (bfuErr) throw bfuErr;
+
+  const thisMonth = new Date().getMonth() + 1;
+  const nextMonth = (thisMonth % 12) + 1;
   const tagById = Object.fromEntries(tags.map((t) => [t.id, t]));
 
   return clients.map((c) => {
@@ -45,6 +56,8 @@ export async function listClientsWithMeta(salonId) {
     const totalSpend =
       cVisits.reduce((sum, v) => sum + Number(v.amount), 0) + cProducts.reduce((sum, p) => sum + Number(p.amount), 0);
     const serviceIds = [...new Set(cVisits.flatMap((v) => (v.visit_services || []).map((vs) => vs.service_id)))];
+    const birthMonth = c.birth_date ? Number(c.birth_date.slice(5, 7)) : null;
+    const thisYearBirthdayFollowUp = birthdayFollowUps.find((f) => f.client_id === c.id) || null;
 
     return {
       ...c,
@@ -59,6 +72,9 @@ export async function listClientsWithMeta(salonId) {
       packageRemaining: activePackages.reduce((sum, p) => sum + (p.total_sessions - p.package_usage.length), 0),
       needsFollowUp: pendingFollowUps.some((f) => f.client_id === c.id),
       noteBodies: noteRows.filter((n) => n.client_id === c.id).map((n) => n.body),
+      isBirthdayThisMonth: birthMonth === thisMonth,
+      isBirthdayNextMonth: birthMonth === nextMonth,
+      birthdaySentThisYear: thisYearBirthdayFollowUp?.status === 'sent',
     };
   });
 }

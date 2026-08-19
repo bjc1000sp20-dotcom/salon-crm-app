@@ -1,7 +1,8 @@
-import { updateSalon } from '../lib/data.js';
+import { updateSalon, listClientsWithLine } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
+import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
 
 export function renderSettings(app) {
   app.root.innerHTML = `
@@ -37,6 +38,33 @@ export function renderSettings(app) {
           <div class="field-label" style="margin-bottom:6px;">LINE 話術管理</div>
           <div class="field-hint" style="margin-bottom:12px;">集中管理常用的固定話術(分類、常用標記),追蹤客戶時可以直接選一則帶入,不用每次重新打字。</div>
           <button class="secondary-btn" id="open-message-templates-btn" style="margin-top:0;">前往話術管理</button>
+        </div>
+
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:6px;">生日 LINE 話術</div>
+          <div class="field-hint" style="margin-bottom:12px;">客戶生日當月會自動用這則訊息發送(需要客戶有開啟生日提醒、已綁定 LINE)。發送時間沿用系統既有的每日排程(約台灣時間早上10點),不支援自訂到分鐘。</div>
+          <div class="field">
+            <div class="field-label">訊息模板</div>
+            <textarea id="f-birthday-template" rows="5" placeholder="例如:嗨 {{客戶姓名}}～生日月快樂🎂">${escapeHtml(app.salon.birthday_message_template || '')}</textarea>
+            <div class="field-hint" style="margin-top:6px;">可用變數:${BIRTHDAY_VARS.map((v) => v.token).join('、')}</div>
+          </div>
+          <div class="field">
+            <div class="field-label">優惠內容(選填,對應 {{優惠內容}})</div>
+            <input type="text" id="f-birthday-offer" value="${escapeAttr(app.salon.birthday_offer_text || '')}" placeholder="例如:生日折價券 $200,消費滿 $2,000 即可使用" />
+          </div>
+          <div class="field">
+            <div class="field-label">預覽(用範例資料)</div>
+            <div id="birthday-preview" class="note-box" style="white-space:pre-wrap;"></div>
+          </div>
+          <button class="primary-btn" id="save-birthday-btn" style="margin-top:6px;">儲存生日話術</button>
+
+          <div class="field" style="margin-top:16px;border-top:1px dashed #E5DCC8;padding-top:14px;">
+            <div class="field-label">發送測試訊息</div>
+            <select id="birthday-test-client">
+              <option value="">選擇一位已綁定 LINE 的客戶...</option>
+            </select>
+            <button class="secondary-btn" id="send-birthday-test-btn" style="margin-top:8px;">發送測試訊息</button>
+          </div>
         </div>
 
         <div style="text-align:center;color:#B8AE9A;font-size:12px;margin:20px 0 90px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
@@ -76,6 +104,80 @@ export function renderSettings(app) {
   };
 
   loadTemplates(app);
+  setupBirthdaySettings(app);
+}
+
+function setupBirthdaySettings(app) {
+  const templateEl = document.getElementById('f-birthday-template');
+  const offerEl = document.getElementById('f-birthday-offer');
+  const previewEl = document.getElementById('birthday-preview');
+
+  function updatePreview() {
+    previewEl.textContent = renderBirthdayVars(templateEl.value, {
+      clientName: '王小姐',
+      birthdayMonth: 8,
+      birthdayDate: 25,
+      offerText: offerEl.value,
+    }) || '(尚未填寫模板)';
+  }
+  templateEl.addEventListener('input', updatePreview);
+  offerEl.addEventListener('input', updatePreview);
+  updatePreview();
+
+  const saveBtn = document.getElementById('save-birthday-btn');
+  saveBtn.onclick = async () => {
+    const birthday_message_template = templateEl.value.trim();
+    const birthday_offer_text = offerEl.value.trim();
+    saveBtn.disabled = true;
+    saveBtn.textContent = '儲存中...';
+    try {
+      const updated = await updateSalon(app.salon.id, { birthday_message_template, birthday_offer_text });
+      app.salon = updated;
+      saveBtn.textContent = '已儲存';
+      setTimeout(() => {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '儲存生日話術';
+      }, 1200);
+    } catch (err) {
+      alert('儲存失敗:' + err.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '儲存生日話術';
+    }
+  };
+
+  const testSelect = document.getElementById('birthday-test-client');
+  listClientsWithLine(app.salon.id)
+    .then((clients) => {
+      testSelect.innerHTML =
+        `<option value="">選擇一位已綁定 LINE 的客戶...</option>` +
+        clients.map((c) => `<option value="${c.line_user_id}" data-name="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    })
+    .catch((err) => console.error(err));
+
+  document.getElementById('send-birthday-test-btn').onclick = async () => {
+    const option = testSelect.selectedOptions[0];
+    if (!testSelect.value) {
+      alert('請先選擇一位客戶');
+      return;
+    }
+    const btn = document.getElementById('send-birthday-test-btn');
+    btn.disabled = true;
+    btn.textContent = '發送中...';
+    try {
+      const message = renderBirthdayVars(templateEl.value, {
+        clientName: option.dataset.name,
+        birthdayMonth: 8,
+        birthdayDate: 25,
+        offerText: offerEl.value,
+      });
+      await sendTestBirthdayMessage(testSelect.value, message);
+      alert('測試訊息已送出,請確認對方 LINE 有沒有收到。');
+    } catch (err) {
+      alert('發送失敗:' + err.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '發送測試訊息';
+  };
 }
 
 async function loadTemplates(app) {

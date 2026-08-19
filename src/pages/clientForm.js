@@ -70,6 +70,10 @@ export async function renderClientForm(app) {
         <div class="field">
           <div class="field-label">生日</div>
           <input type="date" id="f-birth" value="${client?.birth_date || ''}" />
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+            <input type="checkbox" id="f-birthday-reminder" ${client?.birthday_reminder_enabled ? 'checked' : ''} />
+            <span>啟用生日提醒(生日當月自動發送 LINE 生日訊息,需已綁定 LINE)</span>
+          </label>
         </div>
         <div class="field">
           <div class="field-label">客戶來源</div>
@@ -303,6 +307,7 @@ export async function renderClientForm(app) {
       address: document.getElementById('f-address').value.trim(),
       gender,
       birth_date: document.getElementById('f-birth').value || null,
+      birthday_reminder_enabled: document.getElementById('f-birthday-reminder').checked,
       source: source || null,
       source_detail: document.getElementById('f-source-detail').value.trim(),
       history_treatment: yesNoAnswers.history_treatment,

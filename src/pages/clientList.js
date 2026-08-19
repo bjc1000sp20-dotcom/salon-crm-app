@@ -16,6 +16,7 @@ const EMPTY_FILTERS = {
   lastVisitBucket: 'all', // all | 30 | 60 | 90 | 180
   minSpend: '',
   lineStatus: 'all', // all | bound | unbound
+  birthdayFilter: 'all', // all | thisMonth | nextMonth | enabled | disabled | noLine | sentThisYear | notSentThisYear
 };
 
 export async function renderClientList(app) {
@@ -73,7 +74,8 @@ export async function renderClientList(app) {
       (filters.needsFollowUp ? 1 : 0) +
       (filters.lastVisitBucket !== 'all' ? 1 : 0) +
       (filters.minSpend ? 1 : 0) +
-      (filters.lineStatus !== 'all' ? 1 : 0);
+      (filters.lineStatus !== 'all' ? 1 : 0) +
+      (filters.birthdayFilter !== 'all' ? 1 : 0);
     document.getElementById('filter-count').textContent = count ? `(${count})` : '';
   }
   updateFilterCount();
@@ -159,7 +161,8 @@ function isEmptyFilters(f) {
     !f.needsFollowUp &&
     f.lastVisitBucket === 'all' &&
     !f.minSpend &&
-    f.lineStatus === 'all'
+    f.lineStatus === 'all' &&
+    f.birthdayFilter === 'all'
   );
 }
 
@@ -187,6 +190,13 @@ function matchesFilters(c, f) {
   if (f.minSpend && c.totalSpend < Number(f.minSpend)) return false;
   if (f.lineStatus === 'bound' && !c.line_user_id) return false;
   if (f.lineStatus === 'unbound' && c.line_user_id) return false;
+  if (f.birthdayFilter === 'thisMonth' && !c.isBirthdayThisMonth) return false;
+  if (f.birthdayFilter === 'nextMonth' && !c.isBirthdayNextMonth) return false;
+  if (f.birthdayFilter === 'enabled' && !c.birthday_reminder_enabled) return false;
+  if (f.birthdayFilter === 'disabled' && c.birthday_reminder_enabled) return false;
+  if (f.birthdayFilter === 'noLine' && !(c.birthday_reminder_enabled && !c.line_user_id)) return false;
+  if (f.birthdayFilter === 'sentThisYear' && !c.birthdaySentThisYear) return false;
+  if (f.birthdayFilter === 'notSentThisYear' && (!c.birthday_reminder_enabled || c.birthdaySentThisYear)) return false;
   return true;
 }
 
@@ -197,6 +207,22 @@ function openFilterModal(currentFilters, allTags, onApply) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-height:85vh;overflow-y:auto;">
       <div class="modal-title">篩選客戶</div>
+
+      <div class="field-label">生日提醒</div>
+      <div class="service-grid" style="margin-bottom:14px;">
+        ${[
+          { v: 'all', l: '全部客戶' },
+          { v: 'thisMonth', l: '本月壽星' },
+          { v: 'nextMonth', l: '下月壽星' },
+          { v: 'enabled', l: '已開啟生日提醒' },
+          { v: 'disabled', l: '未開啟生日提醒' },
+          { v: 'noLine', l: '生日提醒但未綁 LINE' },
+          { v: 'sentThisYear', l: '今年已發送' },
+          { v: 'notSentThisYear', l: '今年尚未發送' },
+        ]
+          .map((o) => `<button type="button" class="service-chip fm-birthday${f.birthdayFilter === o.v ? ' on' : ''}" data-v="${o.v}">${o.l}</button>`)
+          .join('')}
+      </div>
 
       <div class="field-label">LINE 綁定狀態</div>
       <div class="service-grid" style="margin-bottom:14px;">
@@ -265,6 +291,13 @@ function openFilterModal(currentFilters, allTags, onApply) {
   `;
   document.body.appendChild(overlay);
 
+  overlay.querySelectorAll('.fm-birthday').forEach((btn) => {
+    btn.onclick = () => {
+      f.birthdayFilter = btn.dataset.v;
+      overlay.querySelectorAll('.fm-birthday').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+    };
+  });
   overlay.querySelectorAll('.fm-line-status').forEach((btn) => {
     btn.onclick = () => {
       f.lineStatus = btn.dataset.v;

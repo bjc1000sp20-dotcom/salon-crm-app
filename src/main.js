@@ -22,6 +22,7 @@ import { renderSettings } from './pages/settings.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderLineHub } from './pages/lineHub.js';
 import { renderMessageTemplates } from './pages/messageTemplates.js';
+import { renderBirthdays } from './pages/birthdays.js';
 
 const root = document.getElementById('app');
 
@@ -84,6 +85,8 @@ const app = {
         return renderLineHub(this);
       case 'messageTemplates':
         return renderMessageTemplates(this);
+      case 'birthdays':
+        return renderBirthdays(this);
       case 'settings':
         return renderSettings(this);
       default:

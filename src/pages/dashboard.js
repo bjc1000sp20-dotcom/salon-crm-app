@@ -9,6 +9,7 @@ import {
   countFailedFollowUps,
 } from '../lib/lineIntegration.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
 
 const SLEEPING_THRESHOLD_DAYS = 60;
 
@@ -51,6 +52,7 @@ async function loadContent(app) {
       analytics,
       recentVisits,
       clientsWithMeta,
+      birthdayClients,
     ] = await Promise.all([
       listTodayAppointments(salonId),
       listTodayFollowUps(salonId),
@@ -64,6 +66,7 @@ async function loadContent(app) {
       getMonthlyAnalytics(salonId, month),
       listRecentVisits(salonId, 5),
       listClientsWithMeta(salonId),
+      listThisMonthBirthdayClients(salonId),
     ]);
     const sleepingClients = clientsWithMeta.filter(
       (c) => c.daysSinceLastVisit != null && c.daysSinceLastVisit >= SLEEPING_THRESHOLD_DAYS
@@ -81,6 +84,7 @@ async function loadContent(app) {
       analytics,
       recentVisits,
       sleepingClients,
+      birthdayClients,
     };
   } catch (err) {
     console.error(err);
@@ -101,6 +105,9 @@ async function loadContent(app) {
 }
 
 function todoCountsHtml(d) {
+  const birthdayNoLine = d.birthdayClients.filter((c) => c.birthday_reminder_enabled && !c.line_user_id).length;
+  const birthdayFailed = d.birthdayClients.filter((c) => c.birthdayFollowUp?.status === 'failed').length;
+
   const tiles = [
     { label: '今日預約', count: d.todayAppointments.length, urgent: d.todayAppointments.length > 0 },
     { label: '今日待追蹤', count: d.todayFollowUps.length, urgent: d.todayFollowUps.length > 0 },
@@ -108,6 +115,7 @@ function todoCountsHtml(d) {
     { label: '療程即將用完/到期', count: d.lowPackages.length + d.expiringPackages.length, urgent: false },
     { label: '沉睡客戶', count: d.sleepingClients.length, urgent: false },
     { label: '注意事項', count: d.noLineCount + d.failedCount, urgent: d.failedCount > 0 },
+    { label: '🎂 本月壽星', count: d.birthdayClients.length, urgent: false, id: 'dash-birthday-tile' },
   ];
   return `
     <div class="analytics-block">
@@ -116,13 +124,20 @@ function todoCountsHtml(d) {
         ${tiles
           .map(
             (t) => `
-          <div style="background:#F7F1E4;border-radius:12px;padding:12px 14px;">
+          <div ${t.id ? `id="${t.id}"` : ''} style="background:#F7F1E4;border-radius:12px;padding:12px 14px;${t.id ? 'cursor:pointer;' : ''}">
             <div style="font-size:12px;color:#9B8F7F;">${t.urgent ? '🔴 ' : t.count > 0 ? '🟡 ' : '⚪ '}${t.label}</div>
             <div style="font-size:22px;font-weight:700;color:#3A332B;">${t.count}</div>
           </div>`
           )
           .join('')}
       </div>
+      ${
+        birthdayNoLine || birthdayFailed
+          ? `<div style="margin-top:10px;font-size:12px;color:#B5533C;">
+               ${birthdayNoLine ? `⚠️ ${birthdayNoLine} 位本月壽星尚未綁定 LINE　` : ''}${birthdayFailed ? `⚠️ ${birthdayFailed} 位生日訊息發送失敗` : ''}
+             </div>`
+          : ''
+      }
     </div>
   `;
 }
@@ -271,6 +286,8 @@ function bindEvents(app, content) {
   if (revenueBtn) revenueBtn.onclick = () => app.navigate('revenue');
   const lineHubBtn = document.getElementById('dash-view-linehub-btn');
   if (lineHubBtn) lineHubBtn.onclick = () => app.navigate('lineHub');
+  const birthdayTile = document.getElementById('dash-birthday-tile');
+  if (birthdayTile) birthdayTile.onclick = () => app.navigate('birthdays');
 
   document.getElementById('dash-add-client-btn').onclick = () => app.navigate('clientForm', { mode: 'create' });
   // 新增預約/LINE 追蹤都需要先挑客戶,導去客戶列表,選好客戶後再從客戶詳情頁操作(沿用既有流程,不重做一份客戶搜尋元件)

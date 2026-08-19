@@ -38,6 +38,8 @@ import {
   getLineContactForClient,
 } from '../lib/lineIntegration.js';
 import { buildClientTimeline } from '../lib/timeline.js';
+import { listArchivePhotos, uploadArchivePhoto } from '../lib/clientArchive.js';
+import { openArchivePhotoViewer } from '../components/archivePhotoViewer.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -114,6 +116,10 @@ export async function renderClientDetail(app) {
           <div class="analytics-block" style="text-align:center;color:#9B8F7F;">LINE 資訊載入中...</div>
         </div>
 
+        <div id="archive-section">
+          <div class="analytics-block" style="text-align:center;color:#9B8F7F;">紙本歷史資料載入中...</div>
+        </div>
+
         <div class="section-label">到店紀錄</div>
         <div id="visits-list">
           ${
@@ -137,6 +143,7 @@ export async function renderClientDetail(app) {
     openProductSaleModal(app, client.id, () => app.navigate('clientDetail', { clientId: client.id }));
 
   loadLineSection(app, client, { visits, notes, packages, productSales });
+  loadArchiveSection(app, client);
 
   function renderTagsUI() {
     document.getElementById('tag-warning-banner').innerHTML = clientTags.length ? warningBannerHtml(clientTags) : '';
@@ -528,6 +535,95 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   }
 
   render();
+}
+
+// ---------------- 紙本歷史資料 ----------------
+
+async function loadArchiveSection(app, client) {
+  const container = document.getElementById('archive-section');
+  if (!container) return;
+
+  let photos;
+  try {
+    photos = await listArchivePhotos(client.id);
+  } catch (err) {
+    console.error(err);
+    container.innerHTML = `<div class="analytics-block">紙本歷史資料讀取失敗:${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const thumbUrls = {};
+
+  async function render() {
+    container.innerHTML = archiveSectionHtml(photos, thumbUrls);
+    bindEvents();
+    await loadMissingThumbs();
+  }
+
+  async function loadMissingThumbs() {
+    const missing = photos.filter((p) => !thumbUrls[p.id]);
+    if (!missing.length) return;
+    const urls = await Promise.all(missing.map((p) => getSignedUrl('client-archive', p.storage_path)));
+    missing.forEach((p, i) => {
+      thumbUrls[p.id] = urls[i];
+      const img = container.querySelector(`.archive-thumb[data-id="${p.id}"] img`);
+      if (img) img.src = urls[i];
+    });
+  }
+
+  function bindEvents() {
+    document.getElementById('add-archive-photo-btn').onclick = () => document.getElementById('archive-photo-input').click();
+    document.getElementById('archive-photo-input').onchange = async (e) => {
+      const files = Array.from(e.target.files);
+      e.target.value = '';
+      if (!files.length) return;
+      for (const file of files) {
+        try {
+          await uploadArchivePhoto(app.salon.id, client.id, app.session.user.id, file);
+        } catch (err) {
+          alert('上傳失敗:' + err.message);
+        }
+      }
+      photos = await listArchivePhotos(client.id);
+      render();
+    };
+    container.querySelectorAll('.archive-thumb').forEach((el) => {
+      el.onclick = () => {
+        const idx = photos.findIndex((p) => p.id === el.dataset.id);
+        if (idx < 0) return;
+        openArchivePhotoViewer(photos, idx, (newPhotos) => {
+          photos = newPhotos;
+          render();
+        });
+      };
+    });
+  }
+
+  render();
+}
+
+function archiveSectionHtml(photos, thumbUrls) {
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">紙本歷史資料</div>
+      <div class="field-hint" style="margin-bottom:10px;">舊客戶以前的紙本紀錄,拍照保存就好,不用重新輸入一次。</div>
+      <div class="photo-grid">
+        ${photos
+          .map(
+            (p) => `
+          <div class="photo-thumb-wrap archive-thumb" data-id="${p.id}" style="cursor:pointer;">
+            <img class="photo-thumb" src="${thumbUrls[p.id] || ''}" />
+          </div>`
+          )
+          .join('')}
+        <div class="photo-add" id="add-archive-photo-btn">
+          <span>📎</span>
+          <span>新增照片</span>
+        </div>
+      </div>
+      <input type="file" id="archive-photo-input" accept="image/*" multiple class="hidden" />
+    </div>
+  `;
 }
 
 function lineSectionHtml(client, templates, followUps, customRows, appointments) {

@@ -44,6 +44,7 @@ import { openArchivePhotoViewer } from '../components/archivePhotoViewer.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { sendBirthdayNow, skipBirthdayThisYear } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
+import { openAppointmentConfirmCopyModal } from '../components/appointmentConfirmCopy.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -556,6 +557,12 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
             appointments = await listAppointmentsForClient(client.id);
             followUps = await listFollowUpsForClient(client.id);
             render();
+            openAppointmentConfirmCopyModal(app, {
+              clientName: client.name,
+              appointmentDate: fields.appointment_date,
+              appointmentTime: fields.appointment_time ? fields.appointment_time.slice(0, 5) : '',
+              serviceNames: fields.service_note || '',
+            });
           });
       };
     });

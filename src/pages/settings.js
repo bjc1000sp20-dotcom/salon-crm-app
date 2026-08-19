@@ -4,6 +4,7 @@ import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
+import { APPOINTMENT_CONFIRM_VARS, renderAppointmentConfirmVars } from '../lib/appointmentConfirm.js';
 
 export function renderSettings(app) {
   app.root.innerHTML = `
@@ -71,6 +72,21 @@ export function renderSettings(app) {
           </div>
         </div>
 
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:6px;">預約確認話術設定</div>
+          <div class="field-hint" style="margin-bottom:12px;">新增/修改預約後,會用這則模板產生「複製預約資訊」的內容,方便直接貼到 LINE 給客人確認。</div>
+          <div class="field">
+            <div class="field-label">訊息模板</div>
+            <textarea id="f-appt-confirm-template" rows="5" placeholder="例如:${escapeAttr('您好 {{客戶姓名}},已為您預約 {{預約日期}} {{預約時間}},期待您的光臨!')}">${escapeHtml(app.salon.appointment_confirm_template || '')}</textarea>
+            <div class="field-hint" style="margin-top:6px;">可用變數:${APPOINTMENT_CONFIRM_VARS.map((v) => v.token).join('、')}</div>
+          </div>
+          <div class="field">
+            <div class="field-label">預覽(用範例資料)</div>
+            <div id="appt-confirm-template-preview" class="note-box" style="white-space:pre-wrap;"></div>
+          </div>
+          <button class="primary-btn" id="save-appt-confirm-template-btn" style="margin-top:6px;">儲存預約確認話術</button>
+        </div>
+
         <div style="text-align:center;color:#B8AE9A;font-size:12px;margin:20px 0 90px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
       </div>
       ${tabBarHtml('settings')}
@@ -110,6 +126,44 @@ export function renderSettings(app) {
 
   loadTemplates(app);
   setupBirthdaySettings(app);
+  setupAppointmentConfirmSettings(app);
+}
+
+function setupAppointmentConfirmSettings(app) {
+  const templateEl = document.getElementById('f-appt-confirm-template');
+  const previewEl = document.getElementById('appt-confirm-template-preview');
+
+  function updatePreview() {
+    previewEl.textContent =
+      renderAppointmentConfirmVars(templateEl.value, {
+        clientName: '王小姐',
+        appointmentDate: '2026-08-25',
+        appointmentTime: '14:30',
+        serviceNames: '深層清潔',
+      }) || '(尚未填寫模板)';
+  }
+  templateEl.addEventListener('input', updatePreview);
+  updatePreview();
+
+  const saveBtn = document.getElementById('save-appt-confirm-template-btn');
+  saveBtn.onclick = async () => {
+    const appointment_confirm_template = templateEl.value.trim();
+    saveBtn.disabled = true;
+    saveBtn.textContent = '儲存中...';
+    try {
+      const updated = await updateSalon(app.salon.id, { appointment_confirm_template });
+      app.salon = updated;
+      saveBtn.textContent = '已儲存';
+      setTimeout(() => {
+        saveBtn.disabled = false;
+        saveBtn.textContent = '儲存預約確認話術';
+      }, 1200);
+    } catch (err) {
+      alert('儲存失敗:' + err.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '儲存預約確認話術';
+    }
+  };
 }
 
 function setupBirthdaySettings(app) {

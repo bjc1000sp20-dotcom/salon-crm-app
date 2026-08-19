@@ -11,6 +11,7 @@ import {
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
+import { openQuickAppointmentModal } from '../components/quickAppointmentModal.js';
 
 const SLEEPING_THRESHOLD_DAYS = 60;
 
@@ -295,8 +296,10 @@ function bindEvents(app, content) {
   if (birthdayTile) birthdayTile.onclick = () => app.navigate('birthdays');
 
   document.getElementById('dash-add-client-btn').onclick = () => app.navigate('clientForm', { mode: 'create' });
-  // 新增預約/LINE 追蹤都需要先挑客戶,導去客戶列表,選好客戶後再從客戶詳情頁操作(沿用既有流程,不重做一份客戶搜尋元件)
-  document.getElementById('dash-add-appointment-btn').onclick = () => app.navigate('clientList');
+  document.getElementById('dash-add-appointment-btn').onclick = () => {
+    openQuickAppointmentModal(app, () => loadContent(app));
+  };
+  // LINE 追蹤需要先挑客戶,導去客戶列表,選好客戶後再從客戶詳情頁操作(沿用既有流程,不重做一份客戶搜尋元件)
   document.getElementById('dash-add-followup-btn').onclick = () => app.navigate('clientList');
 }
 

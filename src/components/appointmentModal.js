@@ -1,6 +1,7 @@
 import { ensureDefaultFollowUpTemplates, createAppointmentWithReminders, addDaysToToday } from '../lib/lineIntegration.js';
 import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
+import { openAppointmentConfirmCopyModal } from './appointmentConfirmCopy.js';
 
 // 新增預約 + 一次勾選要建立的「預約前提醒」與「術後追蹤」,一個按鈕全部建立完成
 export async function openAppointmentModal(app, client, onDone) {
@@ -189,7 +190,7 @@ export async function openAppointmentModal(app, client, onDone) {
       createBtn.disabled = true;
       createBtn.textContent = '建立中...';
       try {
-        await createAppointmentWithReminders(app.salon.id, client.id, app.session.user.id, {
+        const appt = await createAppointmentWithReminders(app.salon.id, client.id, app.session.user.id, {
           appointment_date,
           appointment_time,
           service_note,
@@ -201,6 +202,12 @@ export async function openAppointmentModal(app, client, onDone) {
           aftercareTemplateIds,
         });
         overlay.remove();
+        openAppointmentConfirmCopyModal(app, {
+          clientName: client.name,
+          appointmentDate: appt.appointment_date,
+          appointmentTime: appt.appointment_time ? appt.appointment_time.slice(0, 5) : '',
+          serviceNames: appt.service_note || '',
+        });
         if (onDone) onDone();
       } catch (err) {
         console.error(err);

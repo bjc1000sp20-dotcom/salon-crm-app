@@ -1,5 +1,6 @@
 import { ensureDefaultFollowUpTemplates, createAppointmentWithReminders, addDaysToToday } from '../lib/lineIntegration.js';
 import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
+import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 
 // 新增預約 + 一次勾選要建立的「預約前提醒」與「術後追蹤」,一個按鈕全部建立完成
 export async function openAppointmentModal(app, client, onDone) {
@@ -15,8 +16,12 @@ export async function openAppointmentModal(app, client, onDone) {
 
   const body = document.getElementById('appt-modal-body');
   let templates;
+  let messageTemplates;
   try {
-    templates = await ensureDefaultFollowUpTemplates(app.salon.id);
+    [templates, messageTemplates] = await Promise.all([
+      ensureDefaultFollowUpTemplates(app.salon.id),
+      ensureDefaultMessageTemplates(app.salon.id),
+    ]);
   } catch (err) {
     body.innerHTML = `<div class="empty-body">模板讀取失敗:${escapeHtml(err.message)}</div>`;
     return;
@@ -82,6 +87,14 @@ export async function openAppointmentModal(app, client, onDone) {
               <button type="button" class="appt-custom-remove" data-key="${r.key}" style="background:none;border:none;color:#B5533C;cursor:pointer;font-size:13px;">移除</button>
             </div>
             <input type="number" min="1" class="appt-custom-days" data-key="${r.key}" value="${r.days}" />
+            ${
+              messageTemplates.length
+                ? `<select class="appt-custom-template-select" data-key="${r.key}" style="margin-top:6px;">
+                     <option value="">選擇固定話術...</option>
+                     ${messageTemplates.map((t) => `<option value="${t.id}">${t.is_favorite ? '⭐ ' : ''}${escapeHtml(t.category)} - ${escapeHtml(t.name)}</option>`).join('')}
+                   </select>`
+                : ''
+            }
             <textarea class="appt-custom-message" data-key="${r.key}" placeholder="訊息內容(可用 {date} {time} {service})" style="margin-top:6px;">${escapeHtml(r.message)}</textarea>
           </div>`
           )
@@ -132,6 +145,23 @@ export async function openAppointmentModal(app, client, onDone) {
       textarea.oninput = () => {
         const row = customRows.find((r) => String(r.key) === textarea.dataset.key);
         if (row) row.message = textarea.value;
+      };
+    });
+    body.querySelectorAll('.appt-custom-template-select').forEach((select) => {
+      select.onchange = () => {
+        const template = messageTemplates.find((t) => t.id === select.value);
+        if (!template) return;
+        const row = customRows.find((r) => String(r.key) === select.dataset.key);
+        if (!row) return;
+        const context = {
+          clientName: client.name,
+          serviceNames: document.getElementById('appt-service').value.trim(),
+          appointmentDate: document.getElementById('appt-date').value,
+          appointmentTime: document.getElementById('appt-time').value,
+        };
+        row.message = renderMessageVars(template.message, context);
+        const textarea = body.querySelector(`.appt-custom-message[data-key="${select.dataset.key}"]`);
+        if (textarea) textarea.value = row.message;
       };
     });
 

@@ -1,6 +1,7 @@
 import { updateSalon } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
+import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 
 export function renderSettings(app) {
   app.root.innerHTML = `
@@ -31,6 +32,12 @@ export function renderSettings(app) {
           <div class="field-hint" style="margin-bottom:12px;">這些是客戶頁面「LINE 自動追蹤」勾選清單裡的預設選項,可以自己修改標籤、天數與訊息內容。修改後不會影響已經建立好的排程。</div>
           <div id="templates-list">載入中...</div>
         </div>
+
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:6px;">LINE 話術管理</div>
+          <div class="field-hint" style="margin-bottom:12px;">集中管理常用的固定話術(分類、常用標記),追蹤客戶時可以直接選一則帶入,不用每次重新打字。</div>
+          <button class="secondary-btn" id="open-message-templates-btn" style="margin-top:0;">前往話術管理</button>
+        </div>
       </div>
       ${tabBarHtml('settings')}
     </div>
@@ -38,6 +45,7 @@ export function renderSettings(app) {
 
   bindTabBar(app);
   document.getElementById('logout-btn').onclick = () => app.signOut();
+  document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
 
   const saveBtn = document.getElementById('save-btn');
   saveBtn.onclick = async () => {
@@ -71,8 +79,12 @@ export function renderSettings(app) {
 async function loadTemplates(app) {
   const listEl = document.getElementById('templates-list');
   let templates;
+  let messageTemplates;
   try {
-    templates = await ensureDefaultFollowUpTemplates(app.salon.id);
+    [templates, messageTemplates] = await Promise.all([
+      ensureDefaultFollowUpTemplates(app.salon.id),
+      ensureDefaultMessageTemplates(app.salon.id),
+    ]);
   } catch (err) {
     console.error(err);
     listEl.innerHTML = `讀取失敗:${escapeHtml(err.message)}`;
@@ -85,15 +97,24 @@ async function loadTemplates(app) {
 
   listEl.innerHTML = `
     <div class="field-label" style="margin-top:4px;">術後追蹤模板</div>
-    ${aftercare.map((t) => templateRowHtml(t, true)).join('') || `<div class="empty-body">沒有模板</div>`}
+    ${aftercare.map((t) => templateRowHtml(t, true, messageTemplates)).join('') || `<div class="empty-body">沒有模板</div>`}
     <div class="field-label" style="margin-top:18px;">預約提醒模板(可用 {date}／{time}／{service} 帶入預約的日期/時間/項目)</div>
-    ${appointmentReminder.map((t) => templateRowHtml(t, false)).join('') || `<div class="empty-body">沒有模板</div>`}
+    ${appointmentReminder.map((t) => templateRowHtml(t, false, messageTemplates)).join('') || `<div class="empty-body">沒有模板</div>`}
     ${
       others.length
-        ? `<div class="field-label" style="margin-top:18px;">其他模板</div>${others.map((t) => templateRowHtml(t, true)).join('')}`
+        ? `<div class="field-label" style="margin-top:18px;">其他模板</div>${others.map((t) => templateRowHtml(t, true, messageTemplates)).join('')}`
         : ''
     }
   `;
+
+  listEl.querySelectorAll('.tpl-template-select').forEach((select) => {
+    select.onchange = () => {
+      const template = messageTemplates.find((t) => t.id === select.value);
+      if (!template) return;
+      const textarea = listEl.querySelector(`.tpl-message[data-id="${select.dataset.id}"]`);
+      if (textarea) textarea.value = renderMessageVars(template.message, { clientName: '' });
+    };
+  });
 
   listEl.querySelectorAll('.tpl-save-btn').forEach((btn) => {
     btn.onclick = async () => {
@@ -125,7 +146,7 @@ async function loadTemplates(app) {
   });
 }
 
-function templateRowHtml(t, isAftercare) {
+function templateRowHtml(t, isAftercare, messageTemplates) {
   return `
     <div class="field" style="border-top:1px dashed #E5DCC8;padding-top:12px;margin-top:12px;">
       <div style="display:flex;gap:10px;">
@@ -138,6 +159,15 @@ function templateRowHtml(t, isAftercare) {
           <input type="number" class="tpl-days" data-id="${t.id}" min="1" value="${t.days_after}" />
         </div>
       </div>
+      ${
+        messageTemplates && messageTemplates.length
+          ? `<div class="field-label" style="margin-top:8px;">從話術庫套用(選填)</div>
+             <select class="tpl-template-select" data-id="${t.id}">
+               <option value="">選擇固定話術...</option>
+               ${messageTemplates.map((mt) => `<option value="${mt.id}">${mt.is_favorite ? '⭐ ' : ''}${escapeHtml(mt.category)} - ${escapeHtml(mt.name)}</option>`).join('')}
+             </select>`
+          : ''
+      }
       <div class="field-label" style="margin-top:8px;">訊息內容</div>
       <textarea class="tpl-message" data-id="${t.id}" rows="3">${escapeHtml(t.message)}</textarea>
       <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">

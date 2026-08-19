@@ -19,6 +19,7 @@ import { renderPackages } from './pages/packages.js';
 import { renderSettings } from './pages/settings.js';
 import { renderDashboard } from './pages/dashboard.js';
 import { renderLineHub } from './pages/lineHub.js';
+import { renderMessageTemplates } from './pages/messageTemplates.js';
 
 const root = document.getElementById('app');
 
@@ -79,6 +80,8 @@ const app = {
         return renderDashboard(this);
       case 'lineHub':
         return renderLineHub(this);
+      case 'messageTemplates':
+        return renderMessageTemplates(this);
       case 'settings':
         return renderSettings(this);
       default:

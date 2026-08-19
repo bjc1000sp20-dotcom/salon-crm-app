@@ -40,6 +40,7 @@ import {
 import { buildClientTimeline } from '../lib/timeline.js';
 import { listArchivePhotos, uploadArchivePhoto } from '../lib/clientArchive.js';
 import { openArchivePhotoViewer } from '../components/archivePhotoViewer.js';
+import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -383,10 +384,13 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
 
   let templates, followUps, appointments;
   try {
-    [templates, followUps, appointments] = await Promise.all([
+  let messageTemplates;
+  try {
+    [templates, followUps, appointments, messageTemplates] = await Promise.all([
       ensureDefaultFollowUpTemplates(app.salon.id),
       listFollowUpsForClient(client.id),
       listAppointmentsForClient(client.id),
+      ensureDefaultMessageTemplates(app.salon.id),
     ]);
   } catch (err) {
     console.error(err);
@@ -396,9 +400,29 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
 
   let customRows = [];
 
+  function buildMessageContext() {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const upcomingAppt = appointments.find((a) => a.appointment_date >= todayStr && a.status !== 'cancelled');
+    const lastVisit = visits[0];
+    const lastVisitServices = lastVisit
+      ? (lastVisit.visit_services || []).map((vs) => serviceById(vs.service_id)?.name).filter(Boolean).join('、')
+      : '';
+    const activePackages = packages.filter((p) => p.status === 'active' && p.remaining_sessions > 0);
+    return {
+      clientName: client.name,
+      serviceNames: lastVisitServices,
+      lastVisitDate: lastVisit?.visit_date || '',
+      appointmentDate: upcomingAppt?.appointment_date || '',
+      appointmentTime: upcomingAppt?.appointment_time ? upcomingAppt.appointment_time.slice(0, 5) : '',
+      remainingSessions: activePackages.length ? activePackages.reduce((sum, p) => sum + p.remaining_sessions, 0) : null,
+      productName: productSales[0]?.item_name || '',
+    };
+  }
+
   function render() {
     const timelineEvents = buildClientTimeline({ client, visits, productSales, packages, appointments, followUps, notes });
-    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows, appointments) + timelineSectionHtml(timelineEvents);
+    container.innerHTML =
+      lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates) + timelineSectionHtml(timelineEvents);
     bindEvents();
   }
 
@@ -458,6 +482,17 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
       btn.onclick = () => {
         customRows = customRows.filter((r) => String(r.key) !== btn.dataset.key);
         render();
+      };
+    });
+    container.querySelectorAll('.custom-row-template-select').forEach((select) => {
+      select.onchange = () => {
+        const template = messageTemplates.find((t) => t.id === select.value);
+        if (!template) return;
+        const row = customRows.find((r) => String(r.key) === select.dataset.key);
+        if (!row) return;
+        row.message = renderMessageVars(template.message, buildMessageContext());
+        const textarea = container.querySelector(`.custom-row-message[data-key="${select.dataset.key}"]`);
+        if (textarea) textarea.value = row.message;
       };
     });
     container.querySelectorAll('.custom-row-date').forEach((input) => {
@@ -626,7 +661,16 @@ function archiveSectionHtml(photos, thumbUrls) {
   `;
 }
 
-function lineSectionHtml(client, templates, followUps, customRows, appointments) {
+function messageTemplateOptionsHtml(messageTemplates) {
+  return `
+    <option value="">選擇固定話術...</option>
+    ${messageTemplates
+      .map((t) => `<option value="${t.id}">${t.is_favorite ? '⭐ ' : ''}${escapeHtml(t.category)} - ${escapeHtml(t.name)}</option>`)
+      .join('')}
+  `;
+}
+
+function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates) {
   return `
     <div class="analytics-block">
       <div class="analytics-title">LINE</div>
@@ -676,6 +720,11 @@ function lineSectionHtml(client, templates, followUps, customRows, appointments)
               <button type="button" class="custom-row-remove" data-key="${r.key}" style="background:none;border:none;color:#B5533C;cursor:pointer;font-size:13px;">移除</button>
             </div>
             <input type="date" class="custom-row-date" data-key="${r.key}" value="${r.date}" />
+            ${
+              messageTemplates.length
+                ? `<select class="custom-row-template-select" data-key="${r.key}" style="margin-top:6px;">${messageTemplateOptionsHtml(messageTemplates)}</select>`
+                : ''
+            }
             <textarea class="custom-row-message" data-key="${r.key}" placeholder="訊息內容" style="margin-top:6px;">${escapeHtml(r.message)}</textarea>
           </div>`
           )

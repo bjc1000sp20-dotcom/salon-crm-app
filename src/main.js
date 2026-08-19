@@ -23,6 +23,8 @@ import { renderDashboard } from './pages/dashboard.js';
 import { renderLineHub } from './pages/lineHub.js';
 import { renderMessageTemplates } from './pages/messageTemplates.js';
 import { renderBirthdays } from './pages/birthdays.js';
+import { renderManageServices } from './pages/manageServices.js';
+import { loadServices } from './lib/services.js';
 
 const root = document.getElementById('app');
 
@@ -87,6 +89,8 @@ const app = {
         return renderMessageTemplates(this);
       case 'birthdays':
         return renderBirthdays(this);
+      case 'manageServices':
+        return renderManageServices(this);
       case 'settings':
         return renderSettings(this);
       default:
@@ -139,6 +143,7 @@ async function bootstrap() {
 
   try {
     app.salon = await ensureSalon(app.session.user.id);
+    await loadServices(app.salon.id);
   } catch (err) {
     console.error('建立/讀取 salon 失敗', err);
   }

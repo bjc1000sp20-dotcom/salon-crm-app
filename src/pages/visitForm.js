@@ -11,6 +11,7 @@ import {
 import { serviceGridHtml, bindServiceGrid } from '../components/serviceMultiSelect.js';
 import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 import { listPackagesForClient } from '../lib/packages.js';
+import { loadServices } from '../lib/services.js';
 
 const VISIT_TYPES = [
   { id: 'consumption', name: '消費' },
@@ -25,6 +26,7 @@ const VISIT_TYPES = [
 export async function renderVisitForm(app) {
   const { mode, clientId, draft } = app.params;
   const isEdit = mode === 'edit';
+  await loadServices(app.salon.id, { force: true });
   const visit = isEdit ? await getVisit(app.params.visitId) : null;
 
   const selectedServices = draft?.serviceIds ?? (visit ? visit.visit_services.map((vs) => vs.service_id) : []);
@@ -65,7 +67,10 @@ export async function renderVisitForm(app) {
         </div>
 
         <div class="field">
-          <div class="field-label">服務項目(可複選)</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div class="field-label" style="margin-bottom:0;">服務項目(可複選)</div>
+            <button type="button" class="link-btn" id="manage-services-btn">管理項目</button>
+          </div>
           ${serviceGridHtml(selectedServices)}
         </div>
 
@@ -150,6 +155,8 @@ export async function renderVisitForm(app) {
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('clientDetail', { clientId });
+  document.getElementById('manage-services-btn').onclick = () =>
+    app.navigate('manageServices', { returnTo: { mode, clientId, visitId: app.params.visitId, draft } });
 
   const selectedIds = [...selectedServices];
   bindServiceGrid(selectedIds);

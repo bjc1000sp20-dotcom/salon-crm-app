@@ -382,9 +382,7 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   const container = document.getElementById('line-section');
   if (!container) return;
 
-  let templates, followUps, appointments;
-  try {
-  let messageTemplates;
+  let templates, followUps, appointments, messageTemplates;
   try {
     [templates, followUps, appointments, messageTemplates] = await Promise.all([
       ensureDefaultFollowUpTemplates(app.salon.id),

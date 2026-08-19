@@ -3,14 +3,6 @@ import { compressImage } from './photoCompress.js';
 
 // ---------------- 客戶 ----------------
 
-export async function listClients(salonId, search) {
-  let q = supabase.from('clients').select('*').eq('salon_id', salonId).order('created_at', { ascending: false });
-  if (search) q = q.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
-  const { data, error } = await q;
-  if (error) throw error;
-  return data;
-}
-
 export async function getClient(clientId) {
   const { data, error } = await supabase.from('clients').select('*').eq('id', clientId).single();
   if (error) throw error;

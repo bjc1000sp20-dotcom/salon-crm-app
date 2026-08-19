@@ -5,6 +5,7 @@ import {
   listProductSalesForClient,
   getSignedUrl,
   createTopup,
+  updateClient,
 } from '../lib/data.js';
 import { calcAge } from '../lib/calcAge.js';
 import { serviceById } from '../lib/services.js';
@@ -428,6 +429,21 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   }
 
   function bindEvents() {
+    const birthdayToggle = document.getElementById('birthday-reminder-toggle');
+    if (birthdayToggle) {
+      birthdayToggle.onchange = async () => {
+        birthdayToggle.disabled = true;
+        try {
+          await updateClient(client.id, { birthday_reminder_enabled: birthdayToggle.checked });
+          client.birthday_reminder_enabled = birthdayToggle.checked;
+          render();
+        } catch (err) {
+          alert('儲存失敗:' + err.message);
+          birthdayToggle.checked = !birthdayToggle.checked;
+          birthdayToggle.disabled = false;
+        }
+      };
+    }
     const linkBirthdayBtn = document.getElementById('birthday-link-line-btn');
     if (linkBirthdayBtn) {
       linkBirthdayBtn.onclick = () =>
@@ -806,6 +822,14 @@ function lineSectionHtml(client, templates, followUps, customRows, appointments,
 
     <div class="analytics-block">
       <div class="analytics-title">LINE 自動追蹤</div>
+      ${
+        client.birth_date
+          ? `<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+               <input type="checkbox" id="birthday-reminder-toggle" ${client.birthday_reminder_enabled ? 'checked' : ''} />
+               <span>啟用生日提醒(生日當月自動發送 LINE 生日訊息,需已綁定 LINE)</span>
+             </label>`
+          : ''
+      }
       ${
         !client.line_user_id
           ? `<div class="field-hint">尚未綁定 LINE,建立的追蹤會等綁定後才會實際發送。</div>`

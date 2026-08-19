@@ -10,6 +10,7 @@ import {
 } from '../lib/lineIntegration.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 const SLEEPING_THRESHOLD_DAYS = 60;
 
@@ -21,6 +22,9 @@ export async function renderDashboard(app) {
           <div class="header-eyebrow">${escapeHtml(app.salon.salon_name || 'TODAY')}</div>
           <h1 class="header-title">今日工作台</h1>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${homeButtonHtml()}
+        </div>
       </div>
       <div class="list-scroll" id="dashboard-content" style="padding-top:0;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -29,6 +33,7 @@ export async function renderDashboard(app) {
     </div>
   `;
   bindTabBar(app);
+  bindHomeButton(app);
   await loadContent(app);
 }
 

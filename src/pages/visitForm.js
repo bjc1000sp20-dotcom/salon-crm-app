@@ -12,6 +12,7 @@ import { serviceGridHtml, bindServiceGrid } from '../components/serviceMultiSele
 import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 import { listPackagesForClient } from '../lib/packages.js';
 import { loadServices } from '../lib/services.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 const VISIT_TYPES = [
   { id: 'consumption', name: '消費' },
@@ -47,7 +48,7 @@ export async function renderVisitForm(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">${isEdit ? '編輯到店紀錄' : '新增到店紀錄'}</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
         <div class="field">
@@ -155,6 +156,7 @@ export async function renderVisitForm(app) {
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('clientDetail', { clientId });
+  bindHomeButton(app);
   document.getElementById('manage-services-btn').onclick = () =>
     app.navigate('manageServices', { returnTo: { mode, clientId, visitId: app.params.visitId, draft } });
 

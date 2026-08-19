@@ -1,5 +1,6 @@
 import { listAllProductSales, deleteProductSale, listUpcomingRepurchases } from '../lib/data.js';
 import { openProductSaleModal } from '../components/productSaleModal.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderProductSales(app) {
   app.root.innerHTML = `
@@ -7,7 +8,7 @@ export async function renderProductSales(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">商品銷售</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" style="padding-top:16px;" id="product-sales-list">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -19,6 +20,7 @@ export async function renderProductSales(app) {
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('revenue');
+  bindHomeButton(app);
   document.getElementById('add-product-sale-btn').onclick = () =>
     openProductSaleModal(app, null, () => loadList(app));
 

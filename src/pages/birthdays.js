@@ -1,4 +1,5 @@
 import { listThisMonthBirthdayClients, sendBirthdayNow } from '../lib/birthdays.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderBirthdays(app) {
   app.root.innerHTML = `
@@ -6,7 +7,7 @@ export async function renderBirthdays(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">本月壽星</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" id="birthdays-list" style="padding-top:16px;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -14,6 +15,7 @@ export async function renderBirthdays(app) {
     </div>
   `;
   document.getElementById('back-btn').onclick = () => app.navigate('dashboard');
+  bindHomeButton(app);
   await loadList(app);
 }
 

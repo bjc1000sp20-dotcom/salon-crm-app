@@ -1,4 +1,5 @@
 import { listLowRemainingPackages, listExpiringPackages } from '../lib/packages.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderPackages(app) {
   app.root.innerHTML = `
@@ -6,7 +7,7 @@ export async function renderPackages(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">療程管理</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" style="padding-top:16px;" id="packages-page-list">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -15,6 +16,7 @@ export async function renderPackages(app) {
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('revenue');
+  bindHomeButton(app);
 
   await loadList(app);
 }

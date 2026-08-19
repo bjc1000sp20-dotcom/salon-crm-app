@@ -1,4 +1,5 @@
 import { getClient, listTopups, listVisitsForClient, updateTopup } from '../lib/data.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderLedger(app) {
   const { clientId } = app.params;
@@ -11,13 +12,14 @@ export async function renderLedger(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">${escapeHtml(client.name)} · 儲值/扣款帳本</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" style="padding-top:16px;" id="ledger-list"></div>
     </div>
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('clientDetail', { clientId });
+  bindHomeButton(app);
 
   await loadLedger(app, client);
 }

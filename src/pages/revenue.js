@@ -9,6 +9,7 @@ import {
   countNewClientsInMonth,
 } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { SERVICES } from '../lib/services.js';
 import { SOURCES, sourceName } from '../lib/sources.js';
 import { listLowRemainingPackages, listExpiringPackages } from '../lib/packages.js';
@@ -39,6 +40,9 @@ export async function renderRevenue(app) {
           <div class="header-eyebrow">REVENUE OVERVIEW</div>
           <h1 class="header-title">營收總覽</h1>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${homeButtonHtml()}
+        </div>
       </div>
       <div class="list-scroll" id="revenue-content" style="padding-top:0;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -48,6 +52,7 @@ export async function renderRevenue(app) {
   `;
 
   bindTabBar(app);
+  bindHomeButton(app);
   await loadContent(app, month);
 }
 

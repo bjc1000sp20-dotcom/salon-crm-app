@@ -7,6 +7,7 @@ import {
   reorderServices,
   loadServices,
 } from '../lib/services.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderManageServices(app) {
   app.root.innerHTML = `
@@ -14,7 +15,7 @@ export async function renderManageServices(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">編輯服務項目</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" id="services-list" style="padding-top:16px;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -33,6 +34,8 @@ export async function renderManageServices(app) {
       app.navigate('clientList');
     }
   };
+
+  bindHomeButton(app);
 
   document.getElementById('add-service-btn').onclick = async () => {
     const name = prompt('輸入新服務項目的名稱');

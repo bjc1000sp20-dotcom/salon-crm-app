@@ -2,6 +2,7 @@ import { getClientBalance } from '../lib/data.js';
 import { serviceById } from '../lib/services.js';
 import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.js';
 import { paymentMethodName } from '../lib/paymentMethods.js';
+import { homeButtonHtml } from '../components/homeButton.js';
 
 // 每次到店都會看到這一頁(不只第一次)。刻意不接收、不顯示材料費——
 // 這個階段材料費根本還沒被輸入(draft 裡沒有這個欄位),不是只用 CSS 藏起來。
@@ -23,7 +24,7 @@ export async function renderVisitConfirm(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">本次消費確認</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
         <div class="field-hint" style="margin-bottom:10px;">請客人確認以下今天的消費內容,確認無誤後在下方簽名。</div>
@@ -75,6 +76,10 @@ export async function renderVisitConfirm(app) {
     } else {
       app.navigate('visitForm', { mode: 'create', clientId, draft: stripConfirmDraft(draft) });
     }
+  };
+  document.getElementById('home-btn').onclick = () => {
+    clearInterval(checkInterval);
+    app.navigate('dashboard');
   };
 
   confirmBtn.onclick = async () => {

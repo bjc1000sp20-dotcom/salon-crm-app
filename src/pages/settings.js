@@ -1,5 +1,6 @@
 import { updateSalon, listClientsWithLine } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
@@ -12,7 +13,10 @@ export function renderSettings(app) {
           <div class="header-eyebrow">SETTINGS</div>
           <h1 class="header-title">設定</h1>
         </div>
-        <button class="btn-ghost" id="logout-btn" style="height:38px;">登出</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-ghost" id="logout-btn" style="height:38px;">登出</button>
+          ${homeButtonHtml()}
+        </div>
       </div>
       <div class="list-scroll" style="padding-top:0;">
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;">
@@ -74,6 +78,7 @@ export function renderSettings(app) {
   `;
 
   bindTabBar(app);
+  bindHomeButton(app);
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
 

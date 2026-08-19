@@ -1,6 +1,7 @@
 import { listRecentLineContacts, matchLineContact, listUpcomingFollowUps } from '../lib/lineIntegration.js';
 import { searchClientsByName } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderLineHub(app) {
   app.root.innerHTML = `
@@ -10,7 +11,10 @@ export async function renderLineHub(app) {
           <div class="header-eyebrow">LINE</div>
           <h1 class="header-title">LINE 客戶與追蹤</h1>
         </div>
-        <button class="btn-ghost" id="templates-btn" style="height:38px;">話術管理</button>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-ghost" id="templates-btn" style="height:38px;">話術管理</button>
+          ${homeButtonHtml()}
+        </div>
       </div>
       <div class="list-scroll" id="linehub-content" style="padding-top:0;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -19,6 +23,7 @@ export async function renderLineHub(app) {
     </div>
   `;
   bindTabBar(app);
+  bindHomeButton(app);
   document.getElementById('templates-btn').onclick = () => app.navigate('messageTemplates');
   await loadContent(app);
 }

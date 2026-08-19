@@ -8,6 +8,7 @@ import {
   MESSAGE_TEMPLATE_CATEGORIES,
   MESSAGE_TEMPLATE_VARS,
 } from '../lib/messageTemplates.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderMessageTemplates(app) {
   app.root.innerHTML = `
@@ -15,7 +16,7 @@ export async function renderMessageTemplates(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">LINE 話術管理</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="list-scroll" id="mt-list" style="padding-top:16px;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
@@ -26,6 +27,7 @@ export async function renderMessageTemplates(app) {
     </div>
   `;
   document.getElementById('back-btn').onclick = () => app.navigate('lineHub');
+  bindHomeButton(app);
   document.getElementById('mt-add-btn').onclick = () =>
     openTemplateModal(null, async (fields) => {
       await createMessageTemplate(app.salon.id, app.session.user.id, fields);

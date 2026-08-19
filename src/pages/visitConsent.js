@@ -1,4 +1,5 @@
 import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.js';
+import { homeButtonHtml } from '../components/homeButton.js';
 
 // 只有客戶「第一次到店」才會看到這一頁(visitForm.js 檢查過 consent_signature_url 是空的才會導來這裡)
 export function renderVisitConsent(app) {
@@ -9,7 +10,7 @@ export function renderVisitConsent(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">課程前同意書</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
         <div class="field-hint" style="margin-bottom:10px;">請客人閱讀以下內容,同意後在下方簽名。</div>
@@ -57,6 +58,10 @@ export function renderVisitConsent(app) {
   document.getElementById('back-btn').onclick = () => {
     clearInterval(checkInterval);
     app.navigate('visitForm', { mode: 'create', clientId, draft });
+  };
+  document.getElementById('home-btn').onclick = () => {
+    clearInterval(checkInterval);
+    app.navigate('dashboard');
   };
 
   confirmBtn.onclick = async () => {

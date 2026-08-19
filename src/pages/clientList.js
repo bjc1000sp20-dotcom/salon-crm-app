@@ -3,6 +3,7 @@ import { listClientsWithMeta } from '../lib/clientDirectory.js';
 import { ensureDefaultTags } from '../lib/tags.js';
 import { calcAge } from '../lib/calcAge.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { birthdayBannerHtml } from '../components/birthdayBanner.js';
 import { SERVICES } from '../lib/services.js';
 import { SOURCES } from '../lib/sources.js';
@@ -30,6 +31,7 @@ export async function renderClientList(app) {
         <div style="display:flex;gap:8px;align-items:center;">
           <button class="btn-ghost" id="logout-btn" style="height:38px;">登出</button>
           <button class="add-btn" id="add-client-btn">＋</button>
+          ${homeButtonHtml()}
         </div>
       </div>
       <div class="search-wrap" style="display:flex;gap:8px;align-items:center;">
@@ -47,6 +49,7 @@ export async function renderClientList(app) {
   `;
 
   bindTabBar(app);
+  bindHomeButton(app);
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('add-client-btn').onclick = () => app.navigate('clientForm', { mode: 'create' });
 

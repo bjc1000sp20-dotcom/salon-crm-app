@@ -2,6 +2,7 @@ import { createClient, updateClient, getClient, uploadSignature, uploadConsentSi
 import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.js';
 import { SOURCES } from '../lib/sources.js';
 import { SKINCARE_TYPES, SKIN_CONCERNS, SKIN_TYPES } from '../lib/intakeOptions.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 // 是/否 兩顆 chip 的固定樣式,name 是欄位名稱(用來做 id/data 屬性)
 function yesNoHtml(name, label, value) {
@@ -39,7 +40,7 @@ export async function renderClientForm(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">${isEdit ? '編輯客戶資料' : '新增客戶'}</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
         <div class="field">
@@ -164,6 +165,7 @@ export async function renderClientForm(app) {
 
   document.getElementById('back-btn').onclick = () =>
     isEdit ? app.navigate('clientDetail', { clientId: client.id }) : app.navigate('clientList');
+  bindHomeButton(app);
 
   let gender = client?.gender || '';
   document.querySelectorAll('.gender-chip').forEach((chip) => {

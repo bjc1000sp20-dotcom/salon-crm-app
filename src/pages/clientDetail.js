@@ -43,6 +43,7 @@ import { listArchivePhotos, uploadArchivePhoto } from '../lib/clientArchive.js';
 import { openArchivePhotoViewer } from '../components/archivePhotoViewer.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { sendBirthdayNow, skipBirthdayThisYear } from '../lib/birthdays.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -79,7 +80,10 @@ export async function renderClientDetail(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">客戶詳情</div>
-        <button class="icon-btn" id="edit-btn">✎</button>
+        <div style="display:flex;gap:4px;">
+          <button class="icon-btn" id="edit-btn">✎</button>
+          ${homeButtonHtml()}
+        </div>
       </div>
       <div class="form-scroll">
         <div class="detail-name-row">
@@ -139,6 +143,7 @@ export async function renderClientDetail(app) {
 
   document.getElementById('back-btn').onclick = () => app.navigate('clientList');
   document.getElementById('edit-btn').onclick = () => app.navigate('clientForm', { mode: 'edit', clientId: client.id });
+  bindHomeButton(app);
   document.getElementById('add-visit-btn').onclick = () => app.navigate('visitForm', { mode: 'create', clientId: client.id });
   document.getElementById('ledger-btn').onclick = () => app.navigate('ledger', { clientId: client.id });
   document.getElementById('topup-btn').onclick = () => openTopupModal(app, client, balance);

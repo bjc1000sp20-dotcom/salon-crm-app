@@ -10,6 +10,7 @@ import {
 import { serviceById } from '../lib/services.js';
 import { paymentMethodName } from '../lib/paymentMethods.js';
 import { addPackageUsage } from '../lib/packages.js';
+import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 
 const VISIT_TYPE_LABEL = { consumption: '消費', consultation: '單純諮詢', other: '其他' };
 
@@ -25,7 +26,7 @@ export function renderVisitMaterialCost(app) {
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
         <div class="form-header-title">材料費結算</div>
-        <div style="width:38px;"></div>
+        ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:18px;">
@@ -56,6 +57,7 @@ export function renderVisitMaterialCost(app) {
   `;
 
   document.getElementById('back-btn').onclick = () => app.navigate('clientDetail', { clientId });
+  bindHomeButton(app);
 
   const saveBtn = document.getElementById('save-btn');
   saveBtn.onclick = async () => {

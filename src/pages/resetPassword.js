@@ -48,6 +48,6 @@ export function renderResetPassword(app) {
     } catch (err) {
       console.error(err);
     }
-    app.navigate('clientList');
+    app.navigate('dashboard');
   });
 }

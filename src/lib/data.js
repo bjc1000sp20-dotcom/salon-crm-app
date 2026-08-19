@@ -3,6 +3,18 @@ import { compressImage } from './photoCompress.js';
 
 // ---------------- 客戶 ----------------
 
+// 輕量的姓名搜尋,給「從 LINE 聯絡人反向挑客戶」這種小型選擇器用,不用抓每位客戶的完整統計資料
+export async function searchClientsByName(salonId, query) {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, phone')
+    .eq('salon_id', salonId)
+    .ilike('name', `%${query}%`)
+    .limit(20);
+  if (error) throw error;
+  return data;
+}
+
 export async function getClient(clientId) {
   const { data, error } = await supabase.from('clients').select('*').eq('id', clientId).single();
   if (error) throw error;
@@ -270,6 +282,17 @@ export async function listProductSalesForClient(clientId) {
     .select('*')
     .eq('client_id', clientId)
     .order('sale_date', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function listRecentVisits(salonId, limit = 5) {
+  const { data, error } = await supabase
+    .from('visits')
+    .select('*, clients(id, name)')
+    .eq('salon_id', salonId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
   if (error) throw error;
   return data;
 }

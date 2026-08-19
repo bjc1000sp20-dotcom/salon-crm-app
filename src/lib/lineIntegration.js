@@ -42,6 +42,37 @@ export async function getLineContactForClient(lineUserId) {
   return data;
 }
 
+// 近期有互動的 LINE 聯絡人(不管配對過沒),依最後互動時間排序,給首頁/LINE 分頁用
+export async function listRecentLineContacts(salonId, limit = 10) {
+  const { data, error } = await supabase
+    .from('line_contacts')
+    .select('*, clients(id, name, salon_id)')
+    .order('last_event_at', { ascending: false })
+    .limit(limit * 3); // 多抓一點,因為要先在前端濾掉配對到別家店客戶的
+  if (error) throw error;
+  return data.filter((c) => c.matched_client_id === null || c.clients?.salon_id === salonId).slice(0, limit);
+}
+
+export async function countClientsWithoutLine(salonId) {
+  const { count, error } = await supabase
+    .from('clients')
+    .select('id', { count: 'exact', head: true })
+    .eq('salon_id', salonId)
+    .is('line_user_id', null);
+  if (error) throw error;
+  return count || 0;
+}
+
+export async function countFailedFollowUps(salonId) {
+  const { count, error } = await supabase
+    .from('follow_ups')
+    .select('id', { count: 'exact', head: true })
+    .eq('salon_id', salonId)
+    .eq('status', 'failed');
+  if (error) throw error;
+  return count || 0;
+}
+
 export async function unlinkClientLine(clientId) {
   const { error } = await supabase
     .from('clients')
@@ -79,6 +110,32 @@ export async function updateFollowUpTemplate(id, fields) {
 }
 
 // ---------------- 追蹤排程(follow_ups) ----------------
+
+// 今天到期(含逾期還沒發的)、狀態還是待發送的追蹤,跨全部客戶,首頁「今日 LINE 排程」用
+export async function listTodayFollowUps(salonId) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('follow_ups')
+    .select('*, clients(id, name)')
+    .eq('salon_id', salonId)
+    .eq('status', 'pending')
+    .lte('scheduled_at', todayStr)
+    .order('scheduled_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
+
+// 跨全部客戶、還沒發送的追蹤排程(不限今天),給 LINE 分頁的總覽用
+export async function listUpcomingFollowUps(salonId) {
+  const { data, error } = await supabase
+    .from('follow_ups')
+    .select('*, clients(id, name)')
+    .eq('salon_id', salonId)
+    .eq('status', 'pending')
+    .order('scheduled_at', { ascending: true });
+  if (error) throw error;
+  return data;
+}
 
 export async function listFollowUpsForClient(clientId) {
   const { data, error } = await supabase
@@ -123,6 +180,19 @@ export function addDaysToDate(dateStr, days) {
 }
 
 // ---------------- 預約(未來排定的到店時間,獨立於 visits,只用來觸發提醒) ----------------
+
+export async function listTodayAppointments(salonId) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, clients(id, name)')
+    .eq('salon_id', salonId)
+    .eq('appointment_date', todayStr)
+    .in('status', ['scheduled', 'confirmed', 'checked_in'])
+    .order('appointment_time', { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return data;
+}
 
 export async function listAppointmentsForClient(clientId) {
   const { data, error } = await supabase

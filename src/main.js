@@ -17,6 +17,8 @@ import { renderRevenue } from './pages/revenue.js';
 import { renderProductSales } from './pages/productSales.js';
 import { renderPackages } from './pages/packages.js';
 import { renderSettings } from './pages/settings.js';
+import { renderDashboard } from './pages/dashboard.js';
+import { renderLineHub } from './pages/lineHub.js';
 
 const root = document.getElementById('app');
 
@@ -25,9 +27,9 @@ const app = {
   root,
   session: null,
   salon: null,
-  view: 'loading', // loading | login | register | clientList | clientDetail | clientForm | visitForm | ledger | revenue
+  view: 'loading', // loading | login | register | dashboard | clientList | clientDetail | clientForm | visitForm | ledger | revenue | lineHub
   params: {},
-  tab: 'clients', // clients | revenue
+  tab: 'dashboard', // dashboard | clients | lineHub | revenue | settings
 
   navigate(view, params = {}) {
     this.view = view;
@@ -73,6 +75,10 @@ const app = {
         return renderProductSales(this);
       case 'packages':
         return renderPackages(this);
+      case 'dashboard':
+        return renderDashboard(this);
+      case 'lineHub':
+        return renderLineHub(this);
       case 'settings':
         return renderSettings(this);
       default:
@@ -109,7 +115,7 @@ async function bootstrap() {
   } catch (err) {
     console.error('建立/讀取 salon 失敗', err);
   }
-  app.navigate('clientList');
+  app.navigate('dashboard');
 }
 
 bootstrap();

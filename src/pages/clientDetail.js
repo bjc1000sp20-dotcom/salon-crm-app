@@ -143,7 +143,7 @@ export async function renderClientDetail(app) {
   document.getElementById('product-sale-btn').onclick = () =>
     openProductSaleModal(app, client.id, () => app.navigate('clientDetail', { clientId: client.id }));
 
-  loadLineSection(app, client, { visits, notes, packages, productSales });
+  loadLineSection(app, client, { visits, notes, packages, productSales, lineContact });
   loadArchiveSection(app, client);
 
   function renderTagsUI() {
@@ -378,7 +378,7 @@ function openTopupModal(app, client, currentBalance) {
 
 // ---------------- LINE 自動追蹤區塊 ----------------
 
-async function loadLineSection(app, client, { visits, notes, packages, productSales }) {
+async function loadLineSection(app, client, { visits, notes, packages, productSales, lineContact }) {
   const container = document.getElementById('line-section');
   if (!container) return;
 
@@ -420,7 +420,8 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
   function render() {
     const timelineEvents = buildClientTimeline({ client, visits, productSales, packages, appointments, followUps, notes });
     container.innerHTML =
-      lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates) + timelineSectionHtml(timelineEvents);
+      lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact) +
+      timelineSectionHtml(timelineEvents);
     bindEvents();
   }
 
@@ -668,13 +669,23 @@ function messageTemplateOptionsHtml(messageTemplates) {
   `;
 }
 
-function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates) {
+function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact) {
   return `
     <div class="analytics-block">
       <div class="analytics-title">LINE</div>
       ${
         client.line_user_id
-          ? `<div class="detail-row">✅ 已綁定${client.line_linked_at ? `(${formatDateTime(client.line_linked_at)})` : ''}</div>
+          ? `<div style="display:flex;align-items:center;gap:10px;">
+               ${
+                 lineContact?.picture_url
+                   ? `<img src="${lineContact.picture_url}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;" />`
+                   : `<div style="width:40px;height:40px;border-radius:50%;background:#D9CFBB;display:flex;align-items:center;justify-content:center;font-weight:700;color:#3A332B;">${escapeHtml((lineContact?.display_name || client.name || '?').slice(0, 1))}</div>`
+               }
+               <div>
+                 <div class="detail-row">✅ 已綁定${lineContact?.display_name ? `:${escapeHtml(lineContact.display_name)}` : ''}</div>
+                 ${client.line_linked_at ? `<div class="card-sub">${formatDateTime(client.line_linked_at)}</div>` : ''}
+               </div>
+             </div>
              <button class="secondary-btn" id="line-unlink-btn" style="margin-top:8px;">解除綁定</button>`
           : `<div class="detail-row">尚未綁定 LINE</div>
              <button class="secondary-btn" id="line-link-btn" style="margin-top:8px;">選擇 LINE 聯絡人</button>`

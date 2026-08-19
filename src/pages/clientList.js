@@ -15,6 +15,7 @@ const EMPTY_FILTERS = {
   needsFollowUp: false,
   lastVisitBucket: 'all', // all | 30 | 60 | 90 | 180
   minSpend: '',
+  lineStatus: 'all', // all | bound | unbound
 };
 
 export async function renderClientList(app) {
@@ -71,7 +72,8 @@ export async function renderClientList(app) {
       (filters.onlyHasPackage ? 1 : 0) +
       (filters.needsFollowUp ? 1 : 0) +
       (filters.lastVisitBucket !== 'all' ? 1 : 0) +
-      (filters.minSpend ? 1 : 0);
+      (filters.minSpend ? 1 : 0) +
+      (filters.lineStatus !== 'all' ? 1 : 0);
     document.getElementById('filter-count').textContent = count ? `(${count})` : '';
   }
   updateFilterCount();
@@ -107,6 +109,13 @@ export async function renderClientList(app) {
                 ${age != null ? `<span class="card-age">${age} 歲</span>` : ''}
               </div>
               <div class="card-sub">${escapeHtml(c.phone || '未留電話')}${c.lastVisitDate ? ` ・ 最近到店 ${c.lastVisitDate}` : ''}</div>
+              <div style="margin-top:4px;">
+                ${
+                  c.line_user_id
+                    ? `<span class="tag" style="background:#E7EFE4;color:#4E8B5C;">LINE ✓</span>`
+                    : `<span class="tag" style="background:#F0EADA;color:#9B8F7F;">尚未綁定 LINE</span>`
+                }
+              </div>
             </div>
           </button>
         `;
@@ -149,7 +158,8 @@ function isEmptyFilters(f) {
     !f.onlyHasPackage &&
     !f.needsFollowUp &&
     f.lastVisitBucket === 'all' &&
-    !f.minSpend
+    !f.minSpend &&
+    f.lineStatus === 'all'
   );
 }
 
@@ -175,6 +185,8 @@ function matchesFilters(c, f) {
     if (c.daysSinceLastVisit == null || c.daysSinceLastVisit < threshold) return false;
   }
   if (f.minSpend && c.totalSpend < Number(f.minSpend)) return false;
+  if (f.lineStatus === 'bound' && !c.line_user_id) return false;
+  if (f.lineStatus === 'unbound' && c.line_user_id) return false;
   return true;
 }
 
@@ -185,6 +197,17 @@ function openFilterModal(currentFilters, allTags, onApply) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-height:85vh;overflow-y:auto;">
       <div class="modal-title">篩選客戶</div>
+
+      <div class="field-label">LINE 綁定狀態</div>
+      <div class="service-grid" style="margin-bottom:14px;">
+        ${[
+          { v: 'all', l: '全部客戶' },
+          { v: 'bound', l: 'LINE 已綁定' },
+          { v: 'unbound', l: 'LINE 尚未綁定' },
+        ]
+          .map((o) => `<button type="button" class="service-chip fm-line-status${f.lineStatus === o.v ? ' on' : ''}" data-v="${o.v}">${o.l}</button>`)
+          .join('')}
+      </div>
 
       <div class="field-label">最後消費時間(沉睡客戶)</div>
       <div class="service-grid" style="margin-bottom:14px;">
@@ -242,6 +265,13 @@ function openFilterModal(currentFilters, allTags, onApply) {
   `;
   document.body.appendChild(overlay);
 
+  overlay.querySelectorAll('.fm-line-status').forEach((btn) => {
+    btn.onclick = () => {
+      f.lineStatus = btn.dataset.v;
+      overlay.querySelectorAll('.fm-line-status').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+    };
+  });
   overlay.querySelectorAll('.fm-bucket').forEach((btn) => {
     btn.onclick = () => {
       f.lastVisitBucket = btn.dataset.v;

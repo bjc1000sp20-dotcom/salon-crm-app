@@ -35,6 +35,58 @@ export async function matchLineContact(contactId, lineUserId, clientId, salonId)
   if (contactErr) throw contactErr;
 }
 
+// 解除綁定:客戶卡的 line_user_id 清空之外,也要把 line_contacts 那筆的配對狀態一起清掉,
+// 不然這位聯絡人會卡在「已綁定」,之後選不到他(既有的一個小漏洞,這次一併修正)
+export async function unlinkClientLine(clientId) {
+  const { data: client, error: getErr } = await supabase
+    .from('clients')
+    .select('line_user_id')
+    .eq('id', clientId)
+    .single();
+  if (getErr) throw getErr;
+
+  const { error: clientErr } = await supabase
+    .from('clients')
+    .update({ line_user_id: null, line_linked_at: null })
+    .eq('id', clientId);
+  if (clientErr) throw clientErr;
+
+  if (client.line_user_id) {
+    const { error: contactErr } = await supabase
+      .from('line_contacts')
+      .update({ matched_client_id: null, matched_salon_id: null })
+      .eq('line_user_id', client.line_user_id);
+    if (contactErr) throw contactErr;
+  }
+}
+
+// 挑選視窗用:抓「全部」聯絡人(不只未配對的),每筆標出目前綁定狀態,方便防呆
+export async function listAllLineContactsWithStatus(salonId) {
+  const { data, error } = await supabase
+    .from('line_contacts')
+    .select('*, clients(id, name, salon_id)')
+    .order('last_event_at', { ascending: false });
+  if (error) throw error;
+  return data
+    .filter((c) => c.matched_client_id === null || c.clients?.salon_id === salonId)
+    .map((c) => ({ ...c, matchedClientName: c.clients?.salon_id === salonId ? c.clients.name : null }));
+}
+
+// 呼叫後端重新抓取所有聯絡人最新的 LINE 顯示名稱/大頭貼(用登入者的 session token 驗證身分)
+export async function syncLineContacts() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error('請重新登入後再試');
+
+  const res = await fetch('/api/line/sync-contacts', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || '同步失敗');
+  return json;
+}
+
 export async function getLineContactForClient(lineUserId) {
   if (!lineUserId) return null;
   const { data, error } = await supabase.from('line_contacts').select('*').eq('line_user_id', lineUserId).maybeSingle();
@@ -71,14 +123,6 @@ export async function countFailedFollowUps(salonId) {
     .eq('status', 'failed');
   if (error) throw error;
   return count || 0;
-}
-
-export async function unlinkClientLine(clientId) {
-  const { error } = await supabase
-    .from('clients')
-    .update({ line_user_id: null, line_linked_at: null })
-    .eq('id', clientId);
-  if (error) throw error;
 }
 
 // ---------------- 追蹤訊息模板 ----------------

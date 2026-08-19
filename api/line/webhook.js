@@ -1,6 +1,7 @@
 import { getRawBody } from '../_lib/rawBody.js';
 import { verifyLineSignature } from '../_lib/verifySignature.js';
 import { supabaseAdmin } from '../_lib/supabaseAdmin.js';
+import { getProfile } from '../_lib/lineClient.js';
 
 // Phase 2:安全接收 + 驗證簽章。
 // Phase 3:再加上把「傳過訊息的人」存進 line_contacts,等店家在 CRM 後台配對到客戶。
@@ -54,16 +55,23 @@ export default async function handler(req, res) {
 }
 
 async function upsertContact(lineUserId, lastMessageText) {
-  const { error } = await supabaseAdmin
-    .from('line_contacts')
-    .upsert(
-      {
-        line_user_id: lineUserId,
-        last_message_text: lastMessageText,
-        last_event_at: new Date().toISOString(),
-      },
-      { onConflict: 'line_user_id' }
-    );
+  const row = {
+    line_user_id: lineUserId,
+    last_message_text: lastMessageText,
+    last_event_at: new Date().toISOString(),
+  };
+
+  // 順便刷新 LINE 顯示名稱/大頭貼,失敗(例如對方已封鎖官方帳號)就跳過,不影響 webhook 主流程
+  try {
+    const profile = await getProfile(lineUserId);
+    row.display_name = profile.displayName || null;
+    row.picture_url = profile.pictureUrl || null;
+    row.status_message = profile.statusMessage || null;
+  } catch (err) {
+    console.error('[LINE webhook] 取得個人資料失敗', err.message);
+  }
+
+  const { error } = await supabaseAdmin.from('line_contacts').upsert(row, { onConflict: 'line_user_id' });
   if (error) {
     console.error('[LINE webhook] 寫入 line_contacts 失敗', error);
   }

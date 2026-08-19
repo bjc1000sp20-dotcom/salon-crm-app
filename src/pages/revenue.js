@@ -5,6 +5,8 @@ import {
   setRent,
   getServiceMix,
   getSourceMix,
+  countAllClients,
+  countNewClientsInMonth,
 } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { SERVICES } from '../lib/services.js';
@@ -50,15 +52,18 @@ export async function renderRevenue(app) {
 }
 
 async function loadContent(app, month) {
-  const [summary, analytics, visits, serviceMix, sourceMix, lowRemainingPackages, expiringPackages] = await Promise.all([
-    getMonthlySummary(app.salon.id, month),
-    getMonthlyAnalytics(app.salon.id, month),
-    listMonthlyVisits(app.salon.id, month),
-    getServiceMix(app.salon.id, month),
-    getSourceMix(app.salon.id, month),
-    listLowRemainingPackages(app.salon.id),
-    listExpiringPackages(app.salon.id),
-  ]);
+  const [summary, analytics, visits, serviceMix, sourceMix, lowRemainingPackages, expiringPackages, totalClients, newClientsThisMonth] =
+    await Promise.all([
+      getMonthlySummary(app.salon.id, month),
+      getMonthlyAnalytics(app.salon.id, month),
+      listMonthlyVisits(app.salon.id, month),
+      getServiceMix(app.salon.id, month),
+      getSourceMix(app.salon.id, month),
+      listLowRemainingPackages(app.salon.id),
+      listExpiringPackages(app.salon.id),
+      countAllClients(app.salon.id),
+      countNewClientsInMonth(app.salon.id, month),
+    ]);
 
   const content = document.getElementById('revenue-content');
   content.innerHTML = `
@@ -97,6 +102,7 @@ async function loadContent(app, month) {
       <button class="rent-edit-btn" id="edit-rent-btn">編輯</button>
     </div>
 
+    ${clientStatsHtml(analytics, totalClients, newClientsThisMonth, summary)}
     ${analyticsHtml(analytics)}
     ${serviceMixHtml(serviceMix)}
     ${sourceMixHtml(sourceMix)}
@@ -131,6 +137,36 @@ async function loadContent(app, month) {
 
   document.getElementById('manage-product-sales-btn').onclick = () => app.navigate('productSales');
   document.getElementById('manage-packages-btn').onclick = () => app.navigate('packages');
+}
+
+function clientStatsHtml(a, totalClients, newClientsThisMonth, summary) {
+  const avgTicket = a.total_clients ? summary.total_revenue / a.total_clients : 0;
+  const conversionRate = a.consultation_count
+    ? Math.round((a.consultation_converted_count / a.consultation_count) * 100)
+    : null;
+
+  const rows = [
+    { label: '客戶總數', value: `${totalClients} 位` },
+    { label: '本月新增客戶', value: `${newClientsThisMonth} 位` },
+    { label: '本月諮詢人數', value: `${a.consultation_count || 0} 位` },
+    { label: '本月來客人數', value: `${a.total_clients || 0} 位` },
+    { label: '本月消費人次', value: `${a.visit_count || 0} 次` },
+    { label: '本月營收', value: `$${formatMoney(summary.total_revenue)}` },
+    { label: '平均客單價', value: `$${formatMoney(avgTicket)}` },
+  ];
+
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">客戶與來客統計</div>
+      ${rows.map((r) => `<div class="detail-row">${r.label}:${r.value}</div>`).join('')}
+      ${
+        conversionRate != null
+          ? `<div class="detail-row" style="margin-top:6px;"><strong>諮詢成交率:${conversionRate}%</strong>(本月諮詢 ${a.consultation_count} 位,其中 ${a.consultation_converted_count} 位後續有消費)</div>`
+          : ''
+      }
+      <div class="field-hint" style="margin-top:8px;">「本月來客人數」只計算有實際消費紀錄的不重複客戶,單純建立客戶資料或到店諮詢不計入。</div>
+    </div>
+  `;
 }
 
 function analyticsHtml(a) {

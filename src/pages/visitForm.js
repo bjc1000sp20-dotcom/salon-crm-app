@@ -12,6 +12,12 @@ import { serviceGridHtml, bindServiceGrid } from '../components/serviceMultiSele
 import { PAYMENT_METHODS } from '../lib/paymentMethods.js';
 import { listPackagesForClient } from '../lib/packages.js';
 
+const VISIT_TYPES = [
+  { id: 'consumption', name: '消費' },
+  { id: 'consultation', name: '單純諮詢' },
+  { id: 'other', name: '其他' },
+];
+
 // 建立模式(新增到店紀錄)不會在這一頁直接存檔——填完基本資料後,
 // 會先進「同意書」(只有第一次到店才會出現)、「消費確認簽名」,
 // 最後才由店主在另一頁輸入材料費、真正寫進資料庫。
@@ -43,6 +49,17 @@ export async function renderVisitForm(app) {
       </div>
       <div class="form-scroll">
         <div class="field">
+          <div class="field-label">本次到店類型</div>
+          <div class="service-grid">
+            ${VISIT_TYPES.map((t) => {
+              const current = draft?.visit_type ?? visit?.visit_type ?? 'consumption';
+              return `<button type="button" class="service-chip visit-type-chip${current === t.id ? ' on' : ''}" data-vt="${t.id}" style="${current === t.id ? 'background:#3A332B;' : ''}">${t.name}</button>`;
+            }).join('')}
+          </div>
+          <div class="field-hint">選「單純諮詢」或「其他」不會算進本月來客數與營收,只會留下紀錄。</div>
+        </div>
+
+        <div class="field">
           <div class="field-label">到店日期</div>
           <input type="date" id="f-date" value="${draft?.visit_date ?? visit?.visit_date ?? today}" />
         </div>
@@ -52,54 +69,56 @@ export async function renderVisitForm(app) {
           ${serviceGridHtml(selectedServices)}
         </div>
 
-        <div class="row-2">
-          <div class="field">
-            <div class="field-label">消費金額</div>
-            <input type="number" id="f-amount" min="0" step="1" value="${draft?.amount ?? visit?.amount ?? ''}" placeholder="0" />
+        <div id="consumption-fields">
+          <div class="row-2">
+            <div class="field">
+              <div class="field-label">消費金額</div>
+              <input type="number" id="f-amount" min="0" step="1" value="${draft?.amount ?? visit?.amount ?? ''}" placeholder="0" />
+            </div>
+            ${
+              isEdit
+                ? `<div class="field">
+              <div class="field-label">材料費</div>
+              <input type="number" id="f-cost" min="0" step="1" value="${visit?.material_cost ?? ''}" placeholder="0" />
+            </div>`
+                : ''
+            }
           </div>
+          ${!isEdit ? `<div class="field-hint" style="margin:-10px 0 18px;">材料費會在客人簽名確認之後,由店主另外輸入,這裡不會出現。</div>` : ''}
+
+          <div class="field">
+            <div class="field-label">付款方式</div>
+            <div class="service-grid">
+              ${PAYMENT_METHODS.map((m) => {
+                const current = draft?.payment_method ?? visit?.payment_method ?? 'cash';
+                return `<button type="button" class="service-chip pay-chip${current === m.id ? ' on' : ''}" data-pm="${m.id}" style="${current === m.id ? 'background:#3A332B;' : ''}">${m.name}</button>`;
+              }).join('')}
+            </div>
+            <div id="balance-warn"></div>
+          </div>
+
           ${
-            isEdit
+            !isEdit
               ? `<div class="field">
-            <div class="field-label">材料費</div>
-            <input type="number" id="f-cost" min="0" step="1" value="${visit?.material_cost ?? ''}" placeholder="0" />
-          </div>`
+                  <div class="field-label">順便購買產品(選填)</div>
+                  <div id="checkout-products-list"></div>
+                  <button type="button" class="secondary-btn" id="add-checkout-product-btn" style="margin-top:0;">＋ 新增產品</button>
+                </div>`
+              : ''
+          }
+
+          ${
+            !isEdit && clientPackages.length
+              ? `<div class="field">
+                  <div class="field-label">使用療程堂數(選填)</div>
+                  <select id="f-package">
+                    <option value="">不使用</option>
+                    ${clientPackages.map((p) => `<option value="${p.id}" ${draft?.packageId === p.id ? 'selected' : ''}>${escapeHtml(p.package_name)}(剩餘 ${p.remaining_sessions} 堂)</option>`).join('')}
+                  </select>
+                </div>`
               : ''
           }
         </div>
-        ${!isEdit ? `<div class="field-hint" style="margin:-10px 0 18px;">材料費會在客人簽名確認之後,由店主另外輸入,這裡不會出現。</div>` : ''}
-
-        <div class="field">
-          <div class="field-label">付款方式</div>
-          <div class="service-grid">
-            ${PAYMENT_METHODS.map((m) => {
-              const current = draft?.payment_method ?? visit?.payment_method ?? 'cash';
-              return `<button type="button" class="service-chip pay-chip${current === m.id ? ' on' : ''}" data-pm="${m.id}" style="${current === m.id ? 'background:#3A332B;' : ''}">${m.name}</button>`;
-            }).join('')}
-          </div>
-          <div id="balance-warn"></div>
-        </div>
-
-        ${
-          !isEdit
-            ? `<div class="field">
-                <div class="field-label">順便購買產品(選填)</div>
-                <div id="checkout-products-list"></div>
-                <button type="button" class="secondary-btn" id="add-checkout-product-btn" style="margin-top:0;">＋ 新增產品</button>
-              </div>`
-            : ''
-        }
-
-        ${
-          !isEdit && clientPackages.length
-            ? `<div class="field">
-                <div class="field-label">使用療程堂數(選填)</div>
-                <select id="f-package">
-                  <option value="">不使用</option>
-                  ${clientPackages.map((p) => `<option value="${p.id}" ${draft?.packageId === p.id ? 'selected' : ''}>${escapeHtml(p.package_name)}(剩餘 ${p.remaining_sessions} 堂)</option>`).join('')}
-                </select>
-              </div>`
-            : ''
-        }
 
         <div class="field">
           <div class="field-label">這次來的皮膚狀況</div>
@@ -134,6 +153,25 @@ export async function renderVisitForm(app) {
 
   const selectedIds = [...selectedServices];
   bindServiceGrid(selectedIds);
+
+  let visitType = draft?.visit_type ?? visit?.visit_type ?? 'consumption';
+  const consumptionFieldsEl = document.getElementById('consumption-fields');
+  function updateConsumptionFieldsVisibility() {
+    consumptionFieldsEl.style.display = visitType === 'consumption' ? '' : 'none';
+  }
+  updateConsumptionFieldsVisibility();
+  document.querySelectorAll('.visit-type-chip').forEach((chip) => {
+    chip.onclick = () => {
+      visitType = chip.dataset.vt;
+      document.querySelectorAll('.visit-type-chip').forEach((c) => {
+        c.classList.remove('on');
+        c.style.background = '';
+      });
+      chip.classList.add('on');
+      chip.style.background = '#3A332B';
+      updateConsumptionFieldsVisibility();
+    };
+  });
 
   let paymentMethod = draft?.payment_method ?? visit?.payment_method ?? 'cash';
   let clientBalance = null;
@@ -296,9 +334,11 @@ export async function renderVisitForm(app) {
   // ---- 儲存 / 下一步 ----
   const saveBtn = document.getElementById('save-btn');
   saveBtn.onclick = async () => {
+    const isConsumption = visitType === 'consumption';
     const commonFields = {
+      visit_type: visitType,
       visit_date: document.getElementById('f-date').value || today,
-      amount: Number(amountInput.value) || 0,
+      amount: isConsumption ? Number(amountInput.value) || 0 : 0,
       payment_method: paymentMethod,
       skin_condition: document.getElementById('f-skin').value.trim(),
       next_visit_note: document.getElementById('f-note').value.trim(),
@@ -336,8 +376,8 @@ export async function renderVisitForm(app) {
         ...commonFields,
         serviceIds: selectedIds,
         newFiles: newFiles.map((e) => e.file),
-        checkoutProducts,
-        packageId: selectedPackageId,
+        checkoutProducts: isConsumption ? checkoutProducts : [],
+        packageId: isConsumption ? selectedPackageId : null,
       };
       const nextView = client.consent_signature_url ? 'visitConfirm' : 'visitConsent';
       app.navigate(nextView, { clientId, draft: nextDraft });

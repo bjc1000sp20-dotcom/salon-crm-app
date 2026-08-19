@@ -231,6 +231,30 @@ export async function listMonthlyVisits(salonId, month) {
   return data;
 }
 
+export async function countAllClients(salonId) {
+  const { count, error } = await supabase
+    .from('clients')
+    .select('id', { count: 'exact', head: true })
+    .eq('salon_id', salonId);
+  if (error) throw error;
+  return count || 0;
+}
+
+export async function countNewClientsInMonth(salonId, month) {
+  const [y, m] = month.split('-').map(Number);
+  const nextMonth = new Date(y, m, 1);
+  const nextMonthStr = `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-01`;
+
+  const { count, error } = await supabase
+    .from('clients')
+    .select('id', { count: 'exact', head: true })
+    .eq('salon_id', salonId)
+    .gte('created_at', `${month}-01`)
+    .lt('created_at', nextMonthStr);
+  if (error) throw error;
+  return count || 0;
+}
+
 // ---------------- 生日提醒 ----------------
 
 export async function getBirthdayClients(salonId, month) {

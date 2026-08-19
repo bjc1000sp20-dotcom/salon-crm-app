@@ -11,6 +11,8 @@ import { serviceById } from '../lib/services.js';
 import { paymentMethodName } from '../lib/paymentMethods.js';
 import { addPackageUsage } from '../lib/packages.js';
 
+const VISIT_TYPE_LABEL = { consumption: '消費', consultation: '單純諮詢', other: '其他' };
+
 // 店主自己看的最後一步,客人不用在場。按下「完成並儲存」才會真正把資料寫進資料庫
 // (包含到店紀錄、照片、簽名檔案,以及如果是第一次到店的話同時把同意書簽名存進客戶卡)。
 // 在這之前中途離開,不會留下任何資料庫紀錄。
@@ -28,6 +30,7 @@ export function renderVisitMaterialCost(app) {
       <div class="form-scroll">
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:18px;">
           <div class="detail-row"><strong>日期:</strong>&nbsp;${draft.visit_date}</div>
+          <div class="detail-row"><strong>類型:</strong>&nbsp;${VISIT_TYPE_LABEL[draft.visit_type] || '消費'}</div>
           <div class="visit-tags" style="margin:8px 0;">
             ${services.map((s) => `<span class="tag" style="background:${s.color}22;color:${s.color};">${s.name}</span>`).join('')}
           </div>
@@ -61,6 +64,7 @@ export function renderVisitMaterialCost(app) {
     saveBtn.textContent = '儲存中...';
     try {
       const fields = {
+        visit_type: draft.visit_type || 'consumption',
         visit_date: draft.visit_date,
         amount: draft.amount,
         payment_method: draft.payment_method,

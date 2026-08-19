@@ -1,4 +1,4 @@
-import { listAllProductSales, deleteProductSale } from '../lib/data.js';
+import { listAllProductSales, deleteProductSale, listUpcomingRepurchases } from '../lib/data.js';
 import { openProductSaleModal } from '../components/productSaleModal.js';
 
 export async function renderProductSales(app) {
@@ -29,11 +29,20 @@ async function loadList(app) {
   const listEl = document.getElementById('product-sales-list');
   if (!listEl) return;
 
-  const sales = await listAllProductSales(app.salon.id);
+  const [sales, repurchases] = await Promise.all([
+    listAllProductSales(app.salon.id),
+    listUpcomingRepurchases(app.salon.id),
+  ]);
 
-  listEl.innerHTML = sales.length
-    ? sales.map((s) => rowHtml(s)).join('')
-    : `<div class="empty-state"><div class="empty-icon">¥</div><div class="empty-title">還沒有商品銷售紀錄</div><div class="empty-body">點下方「＋ 新增商品銷售」開始記錄</div></div>`;
+  listEl.innerHTML = `
+    ${repurchaseSectionHtml(app, repurchases)}
+    <div class="section-label">全部銷售紀錄</div>
+    ${
+      sales.length
+        ? sales.map((s) => rowHtml(s)).join('')
+        : `<div class="empty-state"><div class="empty-icon">¥</div><div class="empty-title">還沒有商品銷售紀錄</div><div class="empty-body">點下方「＋ 新增商品銷售」開始記錄</div></div>`
+    }
+  `;
 
   listEl.querySelectorAll('.ps-delete-btn').forEach((btn) => {
     btn.onclick = async (e) => {
@@ -43,6 +52,37 @@ async function loadList(app) {
       await loadList(app);
     };
   });
+
+  listEl.querySelectorAll('.repurchase-row').forEach((row) => {
+    row.onclick = () => {
+      if (row.dataset.clientId) app.navigate('clientDetail', { clientId: row.dataset.clientId });
+    };
+  });
+}
+
+function repurchaseSectionHtml(app, repurchases) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">即將回購</div>
+      ${
+        repurchases.length
+          ? repurchases
+              .map((s) => {
+                const overdue = s.deplete_date < todayStr;
+                return `
+              <div class="visit-list-row repurchase-row" data-client-id="${s.clients?.id || ''}" style="cursor:${s.clients?.id ? 'pointer' : 'default'};">
+                <div class="vlr-left">
+                  <div class="vlr-name">${escapeHtml(s.clients?.name || '未指定客戶')}・${escapeHtml(s.item_name)}</div>
+                  <div class="vlr-date" style="${overdue ? 'color:#B5533C;' : ''}">${overdue ? '已超過預計用完日' : '預計用完'}:${s.deplete_date}</div>
+                </div>
+              </div>`;
+              })
+              .join('')
+          : `<div class="empty-body">目前沒有快用完的商品</div>`
+      }
+    </div>
+  `;
 }
 
 function rowHtml(s) {

@@ -79,30 +79,21 @@ async function loadTemplates(app) {
     return;
   }
 
-  listEl.innerHTML = templates
-    .map(
-      (t) => `
-    <div class="field" style="border-top:1px dashed #E5DCC8;padding-top:12px;margin-top:12px;">
-      <div style="display:flex;gap:10px;">
-        <div style="flex:1;">
-          <div class="field-label">標籤</div>
-          <input type="text" class="tpl-label" data-id="${t.id}" value="${escapeAttr(t.label)}" />
-        </div>
-        <div style="width:90px;">
-          <div class="field-label">天數</div>
-          <input type="number" class="tpl-days" data-id="${t.id}" min="1" value="${t.days_after}" />
-        </div>
-      </div>
-      <div class="field-label" style="margin-top:8px;">訊息內容</div>
-      <textarea class="tpl-message" data-id="${t.id}" rows="3">${escapeHtml(t.message)}</textarea>
-      <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
-        <input type="checkbox" class="tpl-enabled" data-id="${t.id}" ${t.enabled ? 'checked' : ''} />
-        <span style="font-size:13px;color:#6B6355;">啟用(關閉後客戶頁面不會顯示這個選項)</span>
-      </label>
-      <button type="button" class="secondary-btn tpl-save-btn" data-id="${t.id}" style="margin-top:8px;">儲存這則模板</button>
-    </div>`
-    )
-    .join('');
+  const aftercare = templates.filter((t) => (t.kind || 'aftercare_followup') === 'aftercare_followup');
+  const appointmentReminder = templates.filter((t) => t.kind === 'appointment_reminder');
+  const others = templates.filter((t) => t.kind && t.kind !== 'aftercare_followup' && t.kind !== 'appointment_reminder');
+
+  listEl.innerHTML = `
+    <div class="field-label" style="margin-top:4px;">術後追蹤模板</div>
+    ${aftercare.map((t) => templateRowHtml(t, true)).join('') || `<div class="empty-body">沒有模板</div>`}
+    <div class="field-label" style="margin-top:18px;">預約提醒模板(可用 {date}／{time}／{service} 帶入預約的日期/時間/項目)</div>
+    ${appointmentReminder.map((t) => templateRowHtml(t, false)).join('') || `<div class="empty-body">沒有模板</div>`}
+    ${
+      others.length
+        ? `<div class="field-label" style="margin-top:18px;">其他模板</div>${others.map((t) => templateRowHtml(t, true)).join('')}`
+        : ''
+    }
+  `;
 
   listEl.querySelectorAll('.tpl-save-btn').forEach((btn) => {
     btn.onclick = async () => {
@@ -132,6 +123,29 @@ async function loadTemplates(app) {
       }
     };
   });
+}
+
+function templateRowHtml(t, isAftercare) {
+  return `
+    <div class="field" style="border-top:1px dashed #E5DCC8;padding-top:12px;margin-top:12px;">
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;">
+          <div class="field-label">標籤</div>
+          <input type="text" class="tpl-label" data-id="${t.id}" value="${escapeAttr(t.label)}" />
+        </div>
+        <div style="width:110px;">
+          <div class="field-label">${isAftercare ? '幾天後' : '提前幾天'}</div>
+          <input type="number" class="tpl-days" data-id="${t.id}" min="1" value="${t.days_after}" />
+        </div>
+      </div>
+      <div class="field-label" style="margin-top:8px;">訊息內容</div>
+      <textarea class="tpl-message" data-id="${t.id}" rows="3">${escapeHtml(t.message)}</textarea>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:6px;">
+        <input type="checkbox" class="tpl-enabled" data-id="${t.id}" ${t.enabled ? 'checked' : ''} />
+        <span style="font-size:13px;color:#6B6355;">啟用(關閉後客戶頁面不會顯示這個選項)</span>
+      </label>
+      <button type="button" class="secondary-btn tpl-save-btn" data-id="${t.id}" style="margin-top:8px;">儲存這則模板</button>
+    </div>`;
 }
 
 function escapeHtml(str) {

@@ -12,6 +12,7 @@ import { openProductSaleModal } from '../components/productSaleModal.js';
 import { sourceName } from '../lib/sources.js';
 import { SKIN_TYPES } from '../lib/intakeOptions.js';
 import { openLineContactPicker } from '../components/lineContactPicker.js';
+import { openAppointmentModal } from '../components/appointmentModal.js';
 import {
   unlinkClientLine,
   ensureDefaultFollowUpTemplates,
@@ -20,6 +21,10 @@ import {
   updateFollowUp,
   cancelFollowUp,
   addDaysToToday,
+  listAppointmentsForClient,
+  updateAppointment,
+  cancelAppointment,
+  completeAppointment,
 } from '../lib/lineIntegration.js';
 
 export async function renderClientDetail(app) {
@@ -212,11 +217,12 @@ async function loadLineSection(app, client) {
   const container = document.getElementById('line-section');
   if (!container) return;
 
-  let templates, followUps;
+  let templates, followUps, appointments;
   try {
-    [templates, followUps] = await Promise.all([
+    [templates, followUps, appointments] = await Promise.all([
       ensureDefaultFollowUpTemplates(app.salon.id),
       listFollowUpsForClient(client.id),
+      listAppointmentsForClient(client.id),
     ]);
   } catch (err) {
     console.error(err);
@@ -227,11 +233,49 @@ async function loadLineSection(app, client) {
   let customRows = [];
 
   function render() {
-    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows);
+    container.innerHTML = lineSectionHtml(client, templates, followUps, customRows, appointments);
     bindEvents();
   }
 
   function bindEvents() {
+    const addApptBtn = document.getElementById('add-appointment-btn');
+    if (addApptBtn) {
+      addApptBtn.onclick = () =>
+        openAppointmentModal(app, client, async () => {
+          appointments = await listAppointmentsForClient(client.id);
+          followUps = await listFollowUpsForClient(client.id);
+          render();
+        });
+    }
+    container.querySelectorAll('.appt-edit-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const a = appointments.find((x) => x.id === btn.dataset.id);
+        if (a)
+          openEditAppointmentModal(a, async (fields) => {
+            await updateAppointment(a.id, fields);
+            appointments = await listAppointmentsForClient(client.id);
+            followUps = await listFollowUpsForClient(client.id);
+            render();
+          });
+      };
+    });
+    container.querySelectorAll('.appt-cancel-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('確定要取消這筆預約嗎?尚未發送的預約提醒也會一併取消。')) return;
+        await cancelAppointment(btn.dataset.id);
+        appointments = await listAppointmentsForClient(client.id);
+        followUps = await listFollowUpsForClient(client.id);
+        render();
+      };
+    });
+    container.querySelectorAll('.appt-complete-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        await completeAppointment(btn.dataset.id);
+        appointments = await listAppointmentsForClient(client.id);
+        render();
+      };
+    });
+
     const linkBtn = document.getElementById('line-link-btn');
     if (linkBtn) {
       linkBtn.onclick = () =>
@@ -336,7 +380,7 @@ async function loadLineSection(app, client) {
   render();
 }
 
-function lineSectionHtml(client, templates, followUps, customRows) {
+function lineSectionHtml(client, templates, followUps, customRows, appointments) {
   return `
     <div class="analytics-block">
       <div class="analytics-title">LINE</div>
@@ -350,6 +394,16 @@ function lineSectionHtml(client, templates, followUps, customRows) {
     </div>
 
     <div class="analytics-block">
+      <div class="analytics-title">預約</div>
+      ${
+        appointments.length
+          ? appointments.map((a) => appointmentRowHtml(a)).join('')
+          : `<div class="empty-body">目前沒有預約</div>`
+      }
+      <button type="button" class="secondary-btn" id="add-appointment-btn" style="margin-top:10px;">＋ 新增預約</button>
+    </div>
+
+    <div class="analytics-block">
       <div class="analytics-title">LINE 自動追蹤</div>
       ${
         !client.line_user_id
@@ -357,7 +411,7 @@ function lineSectionHtml(client, templates, followUps, customRows) {
           : ''
       }
       ${templates
-        .filter((t) => t.enabled !== false)
+        .filter((t) => t.enabled !== false && (t.kind || 'aftercare_followup') === 'aftercare_followup')
         .map(
           (t) => `
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
@@ -396,6 +450,78 @@ function lineSectionHtml(client, templates, followUps, customRows) {
   `;
 }
 
+function appointmentRowHtml(a) {
+  const statusMap = {
+    scheduled: { text: '已排定', color: '#9B8F7F' },
+    completed: { text: '已完成', color: '#4E8B5C' },
+    cancelled: { text: '已取消', color: '#B0A996' },
+  };
+  const s = statusMap[a.status] || statusMap.scheduled;
+  const timeLabel = a.appointment_time ? ` ${a.appointment_time.slice(0, 5)}` : '';
+  return `
+    <div class="visit-card" data-id="${a.id}">
+      <div class="visit-date-row">
+        <span class="visit-date">${a.appointment_date}${timeLabel}${a.service_note ? `・${escapeHtml(a.service_note)}` : ''}</span>
+        <span style="color:${s.color};font-size:13px;font-weight:600;">${s.text}</span>
+      </div>
+      ${
+        a.status === 'scheduled'
+          ? `<div class="visit-tags" style="margin-top:8px;">
+               <button type="button" class="tag appt-edit-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">修改</button>
+               <button type="button" class="tag appt-complete-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#E7EFE4;color:#4E8B5C;">標記完成</button>
+               <button type="button" class="tag appt-cancel-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">取消</button>
+             </div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+function openEditAppointmentModal(appt, onSave) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-title">修改預約</div>
+      <div class="field">
+        <div class="field-label">預約日期</div>
+        <input type="date" id="edit-appt-date" value="${appt.appointment_date}" />
+      </div>
+      <div class="field">
+        <div class="field-label">預約時間</div>
+        <input type="time" id="edit-appt-time" value="${appt.appointment_time ? appt.appointment_time.slice(0, 5) : ''}" />
+      </div>
+      <div class="field">
+        <div class="field-label">服務項目</div>
+        <input type="text" id="edit-appt-service" value="${escapeAttr(appt.service_note || '')}" />
+      </div>
+      <div class="field-hint">改期後,還沒發送的預約提醒會自動改成對應的新日期。</div>
+      <button class="primary-btn" id="edit-appt-save" style="margin-top:10px;">儲存</button>
+      <button class="secondary-btn" id="edit-appt-cancel">取消</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('edit-appt-cancel').onclick = () => overlay.remove();
+  document.getElementById('edit-appt-save').onclick = async () => {
+    const appointment_date = document.getElementById('edit-appt-date').value;
+    const appointment_time = document.getElementById('edit-appt-time').value || null;
+    const service_note = document.getElementById('edit-appt-service').value.trim();
+    if (!appointment_date) {
+      alert('請選擇預約日期');
+      return;
+    }
+    await onSave({ appointment_date, appointment_time, service_note });
+    overlay.remove();
+  };
+}
+
+const FOLLOW_UP_KIND_LABEL = {
+  appointment_reminder: '預約提醒',
+  aftercare_followup: '術後追蹤',
+  reengagement: '回訪關心',
+  custom: '自訂',
+};
+
 function followUpRowHtml(f) {
   const statusMap = {
     pending: { text: '待發送', color: '#9B8F7F' },
@@ -404,10 +530,11 @@ function followUpRowHtml(f) {
     cancelled: { text: '已取消', color: '#B0A996' },
   };
   const s = statusMap[f.status] || statusMap.pending;
+  const kindLabel = FOLLOW_UP_KIND_LABEL[f.kind] || '';
   return `
     <div class="visit-card" data-id="${f.id}">
       <div class="visit-date-row">
-        <span class="visit-date">${f.scheduled_at}・${escapeHtml(f.label)}</span>
+        <span class="visit-date">${f.scheduled_at}・${escapeHtml(f.label)}${kindLabel ? ` <span style="color:#B8AE9A;font-weight:400;">(${kindLabel})</span>` : ''}</span>
         <span style="color:${s.color};font-size:13px;font-weight:600;">${s.text}</span>
       </div>
       <div class="visit-note">${escapeHtml(f.message)}</div>

@@ -292,6 +292,28 @@ export async function listAllProductSales(salonId) {
   return data;
 }
 
+// 有填「預估可用天數」的商品銷售,算出預計用完日期,回傳「已經用完或 7 天內會用完」的,依用完日期排序
+export async function listUpcomingRepurchases(salonId, withinDays = 7) {
+  const { data, error } = await supabase
+    .from('product_sales')
+    .select('*, clients(id, name)')
+    .eq('salon_id', salonId)
+    .not('estimated_days_supply', 'is', null);
+  if (error) throw error;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + withinDays);
+
+  return data
+    .map((s) => {
+      const depleteDate = new Date(s.sale_date + 'T00:00:00');
+      depleteDate.setDate(depleteDate.getDate() + Number(s.estimated_days_supply));
+      return { ...s, deplete_date: depleteDate.toISOString().slice(0, 10) };
+    })
+    .filter((s) => new Date(s.deplete_date + 'T00:00:00') <= cutoff)
+    .sort((a, b) => (a.deplete_date < b.deplete_date ? -1 : 1));
+}
+
 export async function listMonthlyProductSales(salonId, month) {
   const [y, m] = month.split('-').map(Number);
   const nextMonth = new Date(y, m, 1);

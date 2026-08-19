@@ -38,6 +38,8 @@ export function renderSettings(app) {
           <div class="field-hint" style="margin-bottom:12px;">集中管理常用的固定話術(分類、常用標記),追蹤客戶時可以直接選一則帶入,不用每次重新打字。</div>
           <button class="secondary-btn" id="open-message-templates-btn" style="margin-top:0;">前往話術管理</button>
         </div>
+
+        <div style="text-align:center;color:#B8AE9A;font-size:12px;margin:20px 0 90px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
       </div>
       ${tabBarHtml('settings')}
     </div>

@@ -24,6 +24,7 @@ export function renderLogin(app) {
         <button type="button" id="go-register" class="secondary-btn">還沒有帳號?建立新帳號</button>
         <p id="login-error" class="error-text" hidden></p>
       </form>
+      <div style="text-align:center;color:#B8AE9A;font-size:12px;margin-top:14px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
     </main>
   `;
 

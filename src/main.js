@@ -1,6 +1,8 @@
 import './styles/theme.css';
+import { registerSW } from 'virtual:pwa-register';
 import { supabase } from './supabaseClient.js';
 import { ensureSalon, signOutUser } from './lib/auth.js';
+import { showUpdateBanner } from './components/updateBanner.js';
 
 import { renderLogin } from './pages/login.js';
 import { renderRegister } from './pages/register.js';
@@ -91,6 +93,25 @@ const app = {
 };
 
 window.app = app; // 方便除錯用,production 不影響功能
+
+// 有新版本部署時,顯示提示條讓使用者自己按「立即更新」,不會默默背景更新或突然強制重整
+let swRegistration = null;
+const updateSW = registerSW({
+  onNeedRefresh() {
+    showUpdateBanner(() => updateSW(true));
+  },
+  onRegisteredSW(_url, registration) {
+    swRegistration = registration;
+  },
+});
+
+// 手機瀏覽器(尤其是 iOS 加入主畫面後)不太會主動、即時檢查 Service Worker 有沒有新版本,
+// 所以額外在「App 從背景切回前景」時手動觸發一次檢查,盡快抓到新版本
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && swRegistration) {
+    swRegistration.update().catch(() => {});
+  }
+});
 
 async function bootstrap() {
   const { data } = await supabase.auth.getSession();

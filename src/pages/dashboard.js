@@ -7,11 +7,15 @@ import {
   listRecentLineContacts,
   countClientsWithoutLine,
   countFailedFollowUps,
+  addDaysToDate,
 } from '../lib/lineIntegration.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openQuickAppointmentModal } from '../components/quickAppointmentModal.js';
+import { listTodayAndOverdueLeadFollowUps, completeLeadFollowUp, snoozeLeadFollowUp, buildInstagramUrl } from '../lib/leads.js';
+import { openLeadFollowUpModal } from '../components/leadFollowUpModal.js';
+import { openLeadDetailModal } from '../components/leadDetailModal.js';
 
 const SLEEPING_THRESHOLD_DAYS = 60;
 
@@ -59,6 +63,7 @@ async function loadContent(app) {
       recentVisits,
       clientsWithMeta,
       birthdayClients,
+      leadFollowUps,
     ] = await Promise.all([
       listTodayAppointments(salonId),
       listTodayFollowUps(salonId),
@@ -73,6 +78,7 @@ async function loadContent(app) {
       listRecentVisits(salonId, 5),
       listClientsWithMeta(salonId),
       listThisMonthBirthdayClients(salonId),
+      listTodayAndOverdueLeadFollowUps(salonId),
     ]);
     const sleepingClients = clientsWithMeta.filter(
       (c) => c.daysSinceLastVisit != null && c.daysSinceLastVisit >= SLEEPING_THRESHOLD_DAYS
@@ -91,6 +97,7 @@ async function loadContent(app) {
       recentVisits,
       sleepingClients,
       birthdayClients,
+      leadFollowUps,
     };
   } catch (err) {
     console.error(err);
@@ -122,6 +129,7 @@ function todoCountsHtml(d) {
     { label: '沉睡客戶', count: d.sleepingClients.length, urgent: false },
     { label: '注意事項', count: d.noLineCount + d.failedCount, urgent: d.failedCount > 0 },
     { label: '🎂 本月壽星', count: d.birthdayClients.length, urgent: false, id: 'dash-birthday-tile' },
+    { label: '待追蹤', count: d.leadFollowUps.length, urgent: d.leadFollowUps.length > 0, id: 'dash-lead-tile' },
   ];
   return `
     <div class="analytics-block">
@@ -150,10 +158,11 @@ function todoCountsHtml(d) {
 
 function quickActionsHtml() {
   return `
-    <div style="display:flex;gap:8px;margin:14px 0;">
+    <div style="display:flex;gap:8px;margin:14px 0;flex-wrap:wrap;">
       <button class="secondary-btn" id="dash-add-client-btn" style="margin-top:0;">＋新增客戶</button>
       <button class="secondary-btn" id="dash-add-appointment-btn" style="margin-top:0;">＋新增預約</button>
       <button class="secondary-btn" id="dash-add-followup-btn" style="margin-top:0;">＋新增 LINE 追蹤</button>
+      <button class="secondary-btn" id="dash-add-lead-btn" style="margin-top:0;">＋提醒追蹤客戶</button>
     </div>
   `;
 }
@@ -181,6 +190,8 @@ function todayAppointmentsHtml(app, appointments) {
   `;
 }
 
+const LEAD_CHANNEL_LABEL = { instagram: 'Instagram', line: 'LINE', facebook: 'Facebook', threads: 'Threads', phone: '電話', other: '其他' };
+
 function contactTodayHtml(app, d) {
   const items = [
     ...d.todayFollowUps.map((f) => ({
@@ -205,11 +216,13 @@ function contactTodayHtml(app, d) {
     })),
   ];
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   return `
     <div class="section-label">今天該聯絡誰</div>
     <div class="analytics-block">
       ${
-        items.length
+        items.length || d.leadFollowUps.length
           ? items
               .map(
                 (it) => `
@@ -217,11 +230,49 @@ function contactTodayHtml(app, d) {
             <div class="vlr-left"><div class="vlr-name">${it.label}</div></div>
           </div>`
               )
-              .join('')
+              .join('') + d.leadFollowUps.map((f) => leadRowHtml(f, todayStr)).join('')
           : `<div class="empty-body">目前沒有需要聯絡的客戶</div>`
       }
     </div>
   `;
+}
+
+function leadRowHtml(f, todayStr) {
+  const lead = f.leads;
+  const overdueDays = f.remind_date < todayStr ? Math.round((new Date(todayStr) - new Date(f.remind_date)) / 86400000) : 0;
+  const igUrl = buildInstagramUrl(lead.channel, lead.contact_handle);
+  return `
+    <div class="card dash-lead-row" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <span class="tag" style="background:#EDE7F5;color:#6B5C9B;">${escapeHtml(LEAD_CHANNEL_LABEL[lead.channel] || lead.channel)}</span>
+        ${overdueDays > 0 ? `<span style="color:#B5533C;font-size:12px;">⚠️ 已逾期 ${overdueDays} 天</span>` : ''}
+      </div>
+      <div class="card-name" style="margin-top:6px;">${escapeHtml(lead.name || lead.contact_handle || '未命名')}</div>
+      ${lead.contact_handle ? `<div class="card-sub">${escapeHtml(lead.contact_handle)}</div>` : ''}
+      ${lead.lead_statuses?.name ? `<div class="card-sub">${escapeHtml(lead.lead_statuses.name)}</div>` : ''}
+      <div class="visit-note" style="margin-top:6px;">今天提醒:${escapeHtml(f.content)}</div>
+      <div class="field-hint">提醒日期:${formatMD(f.remind_date)}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        ${igUrl ? `<button type="button" class="tag dash-lead-open-ig" data-url="${escapeAttr(igUrl)}" style="cursor:pointer;border:none;background:#F0EADA;">開啟 Instagram</button>` : ''}
+        <button type="button" class="tag dash-lead-view" data-lead-id="${lead.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
+        <button type="button" class="tag dash-lead-complete" data-id="${f.id}" style="cursor:pointer;border:none;background:#E7EFE4;color:#4E8B5C;">完成</button>
+        <button type="button" class="tag dash-lead-snooze-toggle" data-id="${f.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">延後</button>
+      </div>
+      <div class="dash-lead-snooze-choices" data-id="${f.id}" style="display:none;margin-top:8px;gap:6px;flex-wrap:wrap;align-items:center;">
+        <button type="button" class="tag dash-lead-snooze-opt" data-id="${f.id}" data-date="${f.remind_date}" data-days="1" style="cursor:pointer;border:none;background:#F0EADA;">延後1天</button>
+        <button type="button" class="tag dash-lead-snooze-opt" data-id="${f.id}" data-date="${f.remind_date}" data-days="3" style="cursor:pointer;border:none;background:#F0EADA;">延後3天</button>
+        <button type="button" class="tag dash-lead-snooze-opt" data-id="${f.id}" data-date="${f.remind_date}" data-days="7" style="cursor:pointer;border:none;background:#F0EADA;">延後7天</button>
+        <input type="date" class="dash-lead-snooze-custom-date" data-id="${f.id}" value="${f.remind_date}" style="font-size:12px;padding:4px 6px;" />
+        <button type="button" class="tag dash-lead-snooze-custom-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F0EADA;">套用</button>
+      </div>
+    </div>
+  `;
+}
+
+function formatMD(dateStr) {
+  if (!dateStr) return '';
+  const [, m, d] = dateStr.split('-');
+  return `${Number(m)}/${Number(d)}`;
 }
 
 function monthSummaryHtml(app, summary, analytics) {
@@ -294,6 +345,8 @@ function bindEvents(app, content) {
   if (lineHubBtn) lineHubBtn.onclick = () => app.navigate('lineHub');
   const birthdayTile = document.getElementById('dash-birthday-tile');
   if (birthdayTile) birthdayTile.onclick = () => app.navigate('birthdays');
+  const leadTile = document.getElementById('dash-lead-tile');
+  if (leadTile) leadTile.onclick = () => app.navigate('leadTracking');
 
   document.getElementById('dash-add-client-btn').onclick = () => app.navigate('clientForm', { mode: 'create' });
   document.getElementById('dash-add-appointment-btn').onclick = () => {
@@ -301,6 +354,56 @@ function bindEvents(app, content) {
   };
   // LINE 追蹤需要先挑客戶,導去客戶列表,選好客戶後再從客戶詳情頁操作(沿用既有流程,不重做一份客戶搜尋元件)
   document.getElementById('dash-add-followup-btn').onclick = () => app.navigate('clientList');
+  document.getElementById('dash-add-lead-btn').onclick = () => {
+    openLeadFollowUpModal(app, () => loadContent(app));
+  };
+
+  content.querySelectorAll('.dash-lead-open-ig').forEach((btn) => {
+    btn.onclick = () => window.open(btn.dataset.url, '_blank');
+  });
+  content.querySelectorAll('.dash-lead-view').forEach((btn) => {
+    btn.onclick = () => openLeadDetailModal(app, btn.dataset.leadId, () => loadContent(app));
+  });
+  content.querySelectorAll('.dash-lead-complete').forEach((btn) => {
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        await completeLeadFollowUp(btn.dataset.id);
+        await loadContent(app);
+      } catch (err) {
+        alert('操作失敗:' + err.message);
+        btn.disabled = false;
+      }
+    };
+  });
+  content.querySelectorAll('.dash-lead-snooze-toggle').forEach((btn) => {
+    btn.onclick = () => {
+      const choices = content.querySelector(`.dash-lead-snooze-choices[data-id="${btn.dataset.id}"]`);
+      if (choices) choices.style.display = choices.style.display === 'none' ? 'flex' : 'none';
+    };
+  });
+  content.querySelectorAll('.dash-lead-snooze-opt').forEach((btn) => {
+    btn.onclick = async () => {
+      try {
+        await snoozeLeadFollowUp(btn.dataset.id, addDaysToDate(btn.dataset.date, Number(btn.dataset.days)));
+        await loadContent(app);
+      } catch (err) {
+        alert('操作失敗:' + err.message);
+      }
+    };
+  });
+  content.querySelectorAll('.dash-lead-snooze-custom-btn').forEach((btn) => {
+    btn.onclick = async () => {
+      const dateInput = content.querySelector(`.dash-lead-snooze-custom-date[data-id="${btn.dataset.id}"]`);
+      if (!dateInput || !dateInput.value) return;
+      try {
+        await snoozeLeadFollowUp(btn.dataset.id, dateInput.value);
+        await loadContent(app);
+      } catch (err) {
+        alert('操作失敗:' + err.message);
+      }
+    };
+  });
 }
 
 function formatMoney(n) {
@@ -311,4 +414,8 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
   return div.innerHTML;
+}
+
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
 }

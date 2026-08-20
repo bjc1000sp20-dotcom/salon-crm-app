@@ -30,6 +30,7 @@ const SECTION_KEYS = [
   'birthdaySettings',
   'appointmentConfirm',
   'quickPhrases',
+  'leadStatuses',
 ];
 const SECTION_TITLES = {
   salonInfo: '工作室名稱與同意書',
@@ -40,6 +41,7 @@ const SECTION_TITLES = {
   birthdaySettings: '生日 LINE 話術',
   appointmentConfirm: '預約確認話術設定',
   quickPhrases: '常用話語管理',
+  leadStatuses: '追蹤狀態管理',
 };
 
 function computeSectionOrder(app) {
@@ -65,6 +67,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
     birthdaySettings: birthdaySectionHtml(app),
     appointmentConfirm: appointmentConfirmSectionHtml(app),
     quickPhrases: quickPhrasesSectionHtml(),
+    leadStatuses: leadStatusesSectionHtml(),
   };
 
   app.root.innerHTML = `
@@ -93,6 +96,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
   document.getElementById('open-quick-phrases-btn').onclick = () => app.navigate('quickPhrases');
+  document.getElementById('open-lead-statuses-btn').onclick = () => app.navigate('leadStatuses');
   document.getElementById('open-reorder-btn').onclick = () => renderSettings(app, { reorderMode: true });
 
   const saveBtn = document.getElementById('save-btn');
@@ -399,6 +403,16 @@ function quickPhrasesSectionHtml() {
       <div class="field-label" style="margin-bottom:6px;">常用話語管理</div>
       <div class="field-hint" style="margin-bottom:12px;">先設定好常用的提醒句子(例如:不需提早到、停車提醒),預約完成後可以直接勾選加入預約確認訊息,不用每次重新打字。</div>
       <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
+    </div>
+  `;
+}
+
+function leadStatusesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">追蹤狀態管理</div>
+      <div class="field-hint" style="margin-bottom:12px;">管理「提醒追蹤客戶」的目前進度選項(例如:待付訂金、考慮中),可以自己新增、修改、排序。</div>
+      <button class="secondary-btn" id="open-lead-statuses-btn" style="margin-top:0;">前往追蹤狀態管理</button>
     </div>
   `;
 }

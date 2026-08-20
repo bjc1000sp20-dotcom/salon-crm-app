@@ -25,6 +25,8 @@ import { renderMessageTemplates } from './pages/messageTemplates.js';
 import { renderBirthdays } from './pages/birthdays.js';
 import { renderManageServices } from './pages/manageServices.js';
 import { renderQuickPhrases } from './pages/quickPhrases.js';
+import { renderLeadTracking } from './pages/leadTracking.js';
+import { renderLeadStatuses } from './pages/leadStatuses.js';
 import { loadServices } from './lib/services.js';
 
 const root = document.getElementById('app');
@@ -94,6 +96,10 @@ const app = {
         return renderManageServices(this);
       case 'quickPhrases':
         return renderQuickPhrases(this);
+      case 'leadTracking':
+        return renderLeadTracking(this);
+      case 'leadStatuses':
+        return renderLeadStatuses(this);
       case 'settings':
         return renderSettings(this);
       default:

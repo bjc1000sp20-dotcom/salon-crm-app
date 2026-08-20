@@ -1,22 +1,57 @@
 import { supabase } from '../supabaseClient.js';
-import { updateSalon } from './data.js';
 import { compressImage } from './photoCompress.js';
 
 const BUCKET = 'studio-info';
 
-// 工作室資訊圖片每家店只有一張,固定檔名 + upsert 直接覆蓋舊圖,不用另外開資料表管理
-export async function uploadStudioInfoImage(salonId, file) {
-  const blob = await compressImage(file, 1600, 0.75);
-  const path = `${salonId}/studio-info.jpg`;
-  const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, blob, {
-    contentType: 'image/jpeg',
-    upsert: true,
-  });
-  if (uploadErr) throw uploadErr;
-  return updateSalon(salonId, { studio_info_image_path: path });
+export async function listAllStudioImages(salonId) {
+  const { data, error } = await supabase
+    .from('studio_info_images')
+    .select('*')
+    .eq('salon_id', salonId)
+    .order('sort_order', { ascending: true });
+  if (error) throw error;
+  return data;
 }
 
-export async function deleteStudioInfoImage(salonId, path) {
-  await supabase.storage.from(BUCKET).remove([path]);
-  return updateSalon(salonId, { studio_info_image_path: null });
+export async function listEnabledStudioImages(salonId) {
+  const all = await listAllStudioImages(salonId);
+  return all.filter((img) => img.enabled !== false);
+}
+
+// 每張圖片用隨機檔名上傳(跟 client-archive 的多照片做法一樣),可以放很多張,不像舊版只能放一張固定檔名的圖
+export async function uploadStudioImage(salonId, file, name) {
+  const blob = await compressImage(file, 1600, 0.75);
+  const existing = await listAllStudioImages(salonId);
+  const path = `${salonId}/${crypto.randomUUID()}.jpg`;
+  const { error: uploadErr } = await supabase.storage.from(BUCKET).upload(path, blob, {
+    contentType: 'image/jpeg',
+  });
+  if (uploadErr) throw uploadErr;
+
+  const { data, error } = await supabase
+    .from('studio_info_images')
+    .insert({ salon_id: salonId, name: name || '', storage_path: path, sort_order: existing.length + 1 })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function updateStudioImage(id, fields) {
+  const { error } = await supabase.from('studio_info_images').update(fields).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteStudioImage(id, storagePath) {
+  await supabase.storage.from(BUCKET).remove([storagePath]);
+  const { error } = await supabase.from('studio_info_images').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// 把整批工作室圖片的排序寫回去,orderedIds 是重新排序後的 id 陣列
+export async function reorderStudioImages(orderedIds) {
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase.from('studio_info_images').update({ sort_order: i + 1 }).eq('id', orderedIds[i]);
+    if (error) throw error;
+  }
 }

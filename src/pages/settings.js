@@ -5,7 +5,13 @@ import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/l
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
 import { APPOINTMENT_CONFIRM_VARS, renderAppointmentConfirmVars } from '../lib/appointmentConfirm.js';
-import { uploadStudioInfoImage, deleteStudioInfoImage } from '../lib/studioInfo.js';
+import {
+  listAllStudioImages,
+  uploadStudioImage,
+  updateStudioImage,
+  deleteStudioImage,
+  reorderStudioImages,
+} from '../lib/studioInfo.js';
 import { openStudioInfoViewer } from '../components/studioInfoViewer.js';
 
 export function renderSettings(app) {
@@ -37,13 +43,10 @@ export function renderSettings(app) {
 
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
           <div class="field-label" style="margin-bottom:6px;">工作室資訊圖片</div>
-          <div class="field-hint" style="margin-bottom:12px;">可以放工作室位置、地址、交通方式、停車資訊、門口照片或到店注意事項,新增預約完成後會自動顯示,方便一起傳給客戶。</div>
-          <div id="studio-info-image-preview"></div>
+          <div class="field-hint" style="margin-bottom:12px;">可以放工作室位置、地址、交通方式、停車資訊、門口照片、到店注意事項等,想放幾張就放幾張。每張可以命名、排序、設定是否預設勾選,新增預約完成後可以挑這次要用哪幾張一起傳給客戶。</div>
+          <div id="studio-info-images-list">載入中...</div>
           <input type="file" id="studio-info-image-input" accept="image/*" class="hidden" />
-          <div style="display:flex;gap:8px;margin-top:10px;">
-            <button type="button" class="secondary-btn" id="studio-info-upload-btn" style="margin-top:0;">上傳/更換圖片</button>
-            <button type="button" class="secondary-btn" id="studio-info-delete-btn" style="margin-top:0;">刪除圖片</button>
-          </div>
+          <button type="button" class="secondary-btn" id="studio-info-add-btn" style="margin-top:10px;">＋新增工作室圖片</button>
         </div>
 
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
@@ -147,62 +150,143 @@ export function renderSettings(app) {
   loadTemplates(app);
   setupBirthdaySettings(app);
   setupAppointmentConfirmSettings(app);
-  setupStudioInfoImage(app);
+  setupStudioInfoImages(app);
 }
 
-function setupStudioInfoImage(app) {
-  const previewEl = document.getElementById('studio-info-image-preview');
-  const uploadBtn = document.getElementById('studio-info-upload-btn');
-  const deleteBtn = document.getElementById('studio-info-delete-btn');
+function setupStudioInfoImages(app) {
+  const listEl = document.getElementById('studio-info-images-list');
+  const addBtn = document.getElementById('studio-info-add-btn');
   const inputEl = document.getElementById('studio-info-image-input');
+  const urlCache = new Map();
 
-  async function renderPreview() {
-    if (!app.salon.studio_info_image_path) {
-      previewEl.innerHTML = `<div class="field-hint">尚未上傳圖片</div>`;
-      deleteBtn.style.display = 'none';
-      return;
-    }
-    deleteBtn.style.display = '';
-    previewEl.innerHTML = `<div class="field-hint">載入中...</div>`;
-    try {
-      const url = await getSignedUrl('studio-info', app.salon.studio_info_image_path);
-      previewEl.innerHTML = `<img src="${url}" style="max-width:160px;max-height:160px;border-radius:10px;object-fit:contain;cursor:pointer;" id="studio-info-preview-img" />`;
-      document.getElementById('studio-info-preview-img').onclick = () => openStudioInfoViewer(url);
-    } catch (err) {
-      previewEl.innerHTML = `<div class="field-hint">圖片讀取失敗:${escapeHtml(err.message)}</div>`;
-    }
-  }
-
-  uploadBtn.onclick = () => inputEl.click();
+  addBtn.onclick = () => inputEl.click();
   inputEl.onchange = async () => {
     const file = inputEl.files[0];
     inputEl.value = '';
     if (!file) return;
-    uploadBtn.disabled = true;
-    uploadBtn.textContent = '上傳中...';
+    const name = prompt('這張圖片的名稱(例如:工作室位置、停車資訊)') || '';
+    addBtn.disabled = true;
+    addBtn.textContent = '上傳中...';
     try {
-      const updated = await uploadStudioInfoImage(app.salon.id, file);
-      app.salon = updated;
-      await renderPreview();
+      await uploadStudioImage(app.salon.id, file, name.trim());
+      await loadList();
     } catch (err) {
       alert('上傳失敗:' + err.message);
     }
-    uploadBtn.disabled = false;
-    uploadBtn.textContent = '上傳/更換圖片';
+    addBtn.disabled = false;
+    addBtn.textContent = '＋新增工作室圖片';
   };
 
-  deleteBtn.onclick = async () => {
-    if (!confirm('確定要刪除工作室資訊圖片嗎?')) return;
+  async function loadList() {
+    let images;
     try {
-      const updated = await deleteStudioInfoImage(app.salon.id, app.salon.studio_info_image_path);
-      app.salon = updated;
-      await renderPreview();
+      images = await listAllStudioImages(app.salon.id);
     } catch (err) {
-      alert('刪除失敗:' + err.message);
+      listEl.innerHTML = `<div class="field-hint">讀取失敗:${escapeHtml(err.message)}</div>`;
+      return;
     }
-  };
+    if (!images.length) {
+      listEl.innerHTML = `<div class="field-hint">尚未上傳任何圖片</div>`;
+      return;
+    }
+    listEl.innerHTML = images.map((img, idx) => studioImageRowHtml(img, idx, images.length)).join('');
 
-  renderPreview();
+    images.forEach((img) => {
+      getSignedUrl('studio-info', img.storage_path)
+        .then((url) => {
+          urlCache.set(img.storage_path, url);
+          const thumb = listEl.querySelector(`.studio-img-thumb[data-id="${img.id}"]`);
+          if (thumb) thumb.src = url;
+        })
+        .catch(() => {});
+    });
+
+    listEl.querySelectorAll('.studio-img-thumb').forEach((thumbEl) => {
+      thumbEl.onclick = async () => {
+        const resolved = await Promise.all(
+          images.map(async (im) => ({
+            name: im.name,
+            url: urlCache.get(im.storage_path) || (await getSignedUrl('studio-info', im.storage_path)),
+          }))
+        );
+        const idx = images.findIndex((im) => im.id === thumbEl.dataset.id);
+        openStudioInfoViewer(resolved, idx);
+      };
+    });
+    listEl.querySelectorAll('.studio-img-up-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const idx = images.findIndex((im) => im.id === btn.dataset.id);
+        if (idx <= 0) return;
+        [images[idx - 1], images[idx]] = [images[idx], images[idx - 1]];
+        await reorderStudioImages(images.map((im) => im.id));
+        await loadList();
+      };
+    });
+    listEl.querySelectorAll('.studio-img-down-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const idx = images.findIndex((im) => im.id === btn.dataset.id);
+        if (idx < 0 || idx >= images.length - 1) return;
+        [images[idx + 1], images[idx]] = [images[idx], images[idx + 1]];
+        await reorderStudioImages(images.map((im) => im.id));
+        await loadList();
+      };
+    });
+    listEl.querySelectorAll('.studio-img-rename-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const im = images.find((x) => x.id === btn.dataset.id);
+        const name = prompt('修改圖片名稱', im.name || '');
+        if (name === null) return;
+        await updateStudioImage(im.id, { name: name.trim() });
+        await loadList();
+      };
+    });
+    listEl.querySelectorAll('.studio-img-default-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const im = images.find((x) => x.id === btn.dataset.id);
+        await updateStudioImage(im.id, { default_selected: !im.default_selected });
+        await loadList();
+      };
+    });
+    listEl.querySelectorAll('.studio-img-toggle-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        const im = images.find((x) => x.id === btn.dataset.id);
+        await updateStudioImage(im.id, { enabled: !im.enabled });
+        await loadList();
+      };
+    });
+    listEl.querySelectorAll('.studio-img-delete-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!confirm('確定要刪除這張圖片嗎?')) return;
+        const im = images.find((x) => x.id === btn.dataset.id);
+        await deleteStudioImage(im.id, im.storage_path);
+        await loadList();
+      };
+    });
+  }
+
+  loadList();
+}
+
+function studioImageRowHtml(img, idx, total) {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;opacity:${img.enabled ? 1 : 0.55};">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <img class="studio-img-thumb" data-id="${img.id}" src="" style="width:56px;height:56px;border-radius:8px;object-fit:cover;background:#EFE9DA;cursor:pointer;flex-shrink:0;" />
+        <div style="flex:1;">
+          <div class="card-name">${escapeHtml(img.name || '(未命名)')}</div>
+          <div class="card-sub">${img.enabled ? '啟用中' : '已停用'}${img.default_selected ? '・預設勾選' : ''}</div>
+        </div>
+        <button type="button" class="btn-ghost studio-img-up-btn" data-id="${img.id}" ${idx === 0 ? 'disabled' : ''} style="padding:4px 10px;">↑</button>
+        <button type="button" class="btn-ghost studio-img-down-btn" data-id="${img.id}" ${idx === total - 1 ? 'disabled' : ''} style="padding:4px 10px;">↓</button>
+      </div>
+      <div class="visit-tags" style="margin-top:10px;">
+        <button type="button" class="tag studio-img-rename-btn" data-id="${img.id}" style="cursor:pointer;border:none;background:#F0EADA;">改名</button>
+        <button type="button" class="tag studio-img-default-btn" data-id="${img.id}" style="cursor:pointer;border:none;background:${img.default_selected ? '#EDE7F5' : '#F0EADA'};">${img.default_selected ? '取消預設勾選' : '設為預設勾選'}</button>
+        <button type="button" class="tag studio-img-toggle-btn" data-id="${img.id}" style="cursor:pointer;border:none;background:${img.enabled ? '#F5E3DC' : '#E7EFE4'};color:${img.enabled ? '#B5533C' : '#4E8B5C'};">${img.enabled ? '停用' : '啟用'}</button>
+        <button type="button" class="tag studio-img-delete-btn" data-id="${img.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">刪除</button>
+      </div>
+    </div>
+  `;
 }
 
 function setupAppointmentConfirmSettings(app) {

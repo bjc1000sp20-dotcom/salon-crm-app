@@ -93,7 +93,8 @@ export function openQuickAppointmentModal(app, onDone, editTarget) {
         app,
         { client_id: clientId, appointment_id: appointmentId, name, phone, appointment_date, appointment_time, service_note },
         onDone,
-        editTarget?.preservedPhraseIds
+        editTarget?.preservedPhraseIds,
+        editTarget?.preservedImageIds
       );
       if (onDone) onDone();
     } catch (err) {
@@ -105,7 +106,7 @@ export function openQuickAppointmentModal(app, onDone, editTarget) {
   };
 }
 
-function openConfirmStep(app, apptInfo, onDone, preservedPhraseIds) {
+function openConfirmStep(app, apptInfo, onDone, preservedPhraseIds, preservedImageIds) {
   openAppointmentConfirmCopyModal(
     app,
     {
@@ -116,8 +117,13 @@ function openConfirmStep(app, apptInfo, onDone, preservedPhraseIds) {
     },
     {
       preselectedQuickPhraseIds: preservedPhraseIds,
-      onEdit: (currentPhraseIds) =>
-        openQuickAppointmentModal(app, onDone, { ...apptInfo, preservedPhraseIds: currentPhraseIds }),
+      preselectedStudioImageIds: preservedImageIds,
+      onEdit: (currentPhraseIds, currentImageIds) =>
+        openQuickAppointmentModal(app, onDone, {
+          ...apptInfo,
+          preservedPhraseIds: currentPhraseIds,
+          preservedImageIds: currentImageIds,
+        }),
     }
   );
 }

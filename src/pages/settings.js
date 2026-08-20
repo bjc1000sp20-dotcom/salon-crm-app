@@ -14,7 +14,51 @@ import {
 } from '../lib/studioInfo.js';
 import { openStudioInfoViewer } from '../components/studioInfoViewer.js';
 
-export function renderSettings(app) {
+// 設定頁區塊的排序註冊表:以後再新增設定區塊,只要在這裡多加一筆,
+// computeSectionOrder 就會自動把它排進「還沒存過順序」的區塊裡,不用改排序邏輯。
+const SECTION_KEYS = [
+  'salonInfo',
+  'studioImages',
+  'lineTemplates',
+  'messageTemplates',
+  'birthdaySettings',
+  'appointmentConfirm',
+  'quickPhrases',
+];
+const SECTION_TITLES = {
+  salonInfo: '工作室名稱與同意書',
+  studioImages: '工作室資訊圖片',
+  lineTemplates: 'LINE 自動追蹤訊息模板',
+  messageTemplates: 'LINE 話術管理',
+  birthdaySettings: '生日 LINE 話術',
+  appointmentConfirm: '預約確認話術設定',
+  quickPhrases: '常用話語管理',
+};
+
+function computeSectionOrder(app) {
+  const saved = Array.isArray(app.salon.settings_section_order) ? app.salon.settings_section_order : [];
+  const known = saved.filter((k) => SECTION_KEYS.includes(k));
+  const missing = SECTION_KEYS.filter((k) => !known.includes(k));
+  return [...known, ...missing];
+}
+
+export function renderSettings(app, { reorderMode = false } = {}) {
+  if (reorderMode) {
+    renderReorderMode(app);
+    return;
+  }
+
+  const order = computeSectionOrder(app);
+  const sectionHtml = {
+    salonInfo: salonInfoSectionHtml(app),
+    studioImages: studioImagesSectionHtml(),
+    lineTemplates: lineTemplatesSectionHtml(),
+    messageTemplates: messageTemplatesSectionHtml(),
+    birthdaySettings: birthdaySectionHtml(app),
+    appointmentConfirm: appointmentConfirmSectionHtml(app),
+    quickPhrases: quickPhrasesSectionHtml(),
+  };
+
   app.root.innerHTML = `
     <div class="screen">
       <div class="header">
@@ -28,87 +72,8 @@ export function renderSettings(app) {
         </div>
       </div>
       <div class="list-scroll" style="padding-top:0;">
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;">
-          <div class="field">
-            <div class="field-label">工作室名稱</div>
-            <input type="text" id="f-salon-name" value="${escapeAttr(app.salon.salon_name)}" placeholder="工作室名稱" />
-          </div>
-          <div class="field" style="margin-bottom:0;">
-            <div class="field-label">課程前同意書內容</div>
-            <textarea id="f-consent-template" rows="10">${escapeHtml(app.salon.consent_template)}</textarea>
-            <div class="field-hint">客戶第一次建立客戶卡時,會看到這段文字並簽名同意。之後修改不會影響客戶已經簽過的舊紀錄。</div>
-          </div>
-          <button class="primary-btn" id="save-btn" style="margin-top:18px;">儲存</button>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:6px;">工作室資訊圖片</div>
-          <div class="field-hint" style="margin-bottom:12px;">可以放工作室位置、地址、交通方式、停車資訊、門口照片、到店注意事項等,想放幾張就放幾張。每張可以命名、排序、設定是否預設勾選,新增預約完成後可以挑這次要用哪幾張一起傳給客戶。</div>
-          <div id="studio-info-images-list">載入中...</div>
-          <input type="file" id="studio-info-image-input" accept="image/*" class="hidden" />
-          <button type="button" class="secondary-btn" id="studio-info-add-btn" style="margin-top:10px;">＋新增工作室圖片</button>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:10px;">LINE 自動追蹤訊息模板</div>
-          <div class="field-hint" style="margin-bottom:12px;">這些是客戶頁面「LINE 自動追蹤」勾選清單裡的預設選項,可以自己修改標籤、天數與訊息內容。修改後不會影響已經建立好的排程。</div>
-          <div id="templates-list">載入中...</div>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:6px;">LINE 話術管理</div>
-          <div class="field-hint" style="margin-bottom:12px;">集中管理常用的固定話術(分類、常用標記),追蹤客戶時可以直接選一則帶入,不用每次重新打字。</div>
-          <button class="secondary-btn" id="open-message-templates-btn" style="margin-top:0;">前往話術管理</button>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:6px;">生日 LINE 話術</div>
-          <div class="field-hint" style="margin-bottom:12px;">客戶生日當月會自動用這則訊息發送(需要客戶有開啟生日提醒、已綁定 LINE)。發送時間沿用系統既有的每日排程(約台灣時間早上10點),不支援自訂到分鐘。</div>
-          <div class="field">
-            <div class="field-label">訊息模板</div>
-            <textarea id="f-birthday-template" rows="5" placeholder="例如:嗨 {{客戶姓名}}～生日月快樂🎂">${escapeHtml(app.salon.birthday_message_template || '')}</textarea>
-            <div class="field-hint" style="margin-top:6px;">可用變數:${BIRTHDAY_VARS.map((v) => v.token).join('、')}</div>
-          </div>
-          <div class="field">
-            <div class="field-label">優惠內容(選填,對應 {{優惠內容}})</div>
-            <input type="text" id="f-birthday-offer" value="${escapeAttr(app.salon.birthday_offer_text || '')}" placeholder="例如:生日折價券 $200,消費滿 $2,000 即可使用" />
-          </div>
-          <div class="field">
-            <div class="field-label">預覽(用範例資料)</div>
-            <div id="birthday-preview" class="note-box" style="white-space:pre-wrap;"></div>
-          </div>
-          <button class="primary-btn" id="save-birthday-btn" style="margin-top:6px;">儲存生日話術</button>
-
-          <div class="field" style="margin-top:16px;border-top:1px dashed #E5DCC8;padding-top:14px;">
-            <div class="field-label">發送測試訊息</div>
-            <select id="birthday-test-client">
-              <option value="">選擇一位已綁定 LINE 的客戶...</option>
-            </select>
-            <button class="secondary-btn" id="send-birthday-test-btn" style="margin-top:8px;">發送測試訊息</button>
-          </div>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:6px;">預約確認話術設定</div>
-          <div class="field-hint" style="margin-bottom:12px;">新增/修改預約後,會用這則模板產生「複製預約資訊」的內容,方便直接貼到 LINE 給客人確認。</div>
-          <div class="field">
-            <div class="field-label">訊息模板</div>
-            <textarea id="f-appt-confirm-template" rows="5" placeholder="例如:${escapeAttr('您好 {{客戶姓名}},已為您預約 {{預約日期}} {{預約時間}},期待您的光臨!')}">${escapeHtml(app.salon.appointment_confirm_template || '')}</textarea>
-            <div class="field-hint" style="margin-top:6px;">可用變數:${APPOINTMENT_CONFIRM_VARS.map((v) => v.token).join('、')}</div>
-          </div>
-          <div class="field">
-            <div class="field-label">預覽(用範例資料)</div>
-            <div id="appt-confirm-template-preview" class="note-box" style="white-space:pre-wrap;"></div>
-          </div>
-          <button class="primary-btn" id="save-appt-confirm-template-btn" style="margin-top:6px;">儲存預約確認話術</button>
-        </div>
-
-        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-          <div class="field-label" style="margin-bottom:6px;">常用話語管理</div>
-          <div class="field-hint" style="margin-bottom:12px;">先設定好常用的提醒句子(例如:不需提早到、停車提醒),預約完成後可以直接勾選加入預約確認訊息,不用每次重新打字。</div>
-          <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
-        </div>
-
+        <button type="button" class="secondary-btn" id="open-reorder-btn" style="margin-top:0;margin-bottom:6px;">調整順序</button>
+        ${order.map((key) => sectionHtml[key] || '').join('')}
         <div style="text-align:center;color:#B8AE9A;font-size:12px;margin:20px 0 90px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
       </div>
       ${tabBarHtml('settings')}
@@ -120,6 +85,7 @@ export function renderSettings(app) {
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
   document.getElementById('open-quick-phrases-btn').onclick = () => app.navigate('quickPhrases');
+  document.getElementById('open-reorder-btn').onclick = () => renderSettings(app, { reorderMode: true });
 
   const saveBtn = document.getElementById('save-btn');
   saveBtn.onclick = async () => {
@@ -151,6 +117,260 @@ export function renderSettings(app) {
   setupBirthdaySettings(app);
   setupAppointmentConfirmSettings(app);
   setupStudioInfoImages(app);
+}
+
+// ---------------- 排序模式 ----------------
+
+function renderReorderMode(app) {
+  let workingOrder = computeSectionOrder(app);
+
+  function render() {
+    app.root.innerHTML = `
+      <div class="screen">
+        <div class="form-header">
+          <button class="icon-btn" id="reorder-cancel-btn">←</button>
+          <div class="form-header-title">調整設定順序</div>
+          <div style="width:38px;"></div>
+        </div>
+        <div class="list-scroll" style="padding-top:16px;">
+          <div class="field-hint" style="margin-bottom:12px;">拖曳 ☰ 或用上下箭頭調整順序,完成後記得按【儲存排序】。</div>
+          <div id="reorder-list">
+            ${workingOrder.map((key, idx) => reorderRowHtml(key, idx, workingOrder.length)).join('')}
+          </div>
+          <button type="button" class="primary-btn" id="reorder-save-btn" style="margin-top:16px;">儲存排序</button>
+          <button type="button" class="secondary-btn" id="reorder-cancel-btn2">取消</button>
+          <button type="button" class="secondary-btn" id="reorder-reset-btn">恢復預設排序</button>
+        </div>
+      </div>
+    `;
+    bind();
+  }
+
+  function bind() {
+    document.getElementById('reorder-cancel-btn').onclick = () => renderSettings(app);
+    document.getElementById('reorder-cancel-btn2').onclick = () => renderSettings(app);
+
+    document.getElementById('reorder-save-btn').onclick = async () => {
+      const saveBtn = document.getElementById('reorder-save-btn');
+      saveBtn.disabled = true;
+      saveBtn.textContent = '儲存中...';
+      try {
+        const updated = await updateSalon(app.salon.id, { settings_section_order: workingOrder });
+        app.salon = updated;
+        renderSettings(app);
+      } catch (err) {
+        alert('儲存失敗:' + err.message);
+        saveBtn.disabled = false;
+        saveBtn.textContent = '儲存排序';
+      }
+    };
+
+    document.getElementById('reorder-reset-btn').onclick = async () => {
+      if (!confirm('確定要恢復設定頁預設順序嗎?')) return;
+      try {
+        const updated = await updateSalon(app.salon.id, { settings_section_order: null });
+        app.salon = updated;
+        renderSettings(app);
+      } catch (err) {
+        alert('操作失敗:' + err.message);
+      }
+    };
+
+    const listEl = document.getElementById('reorder-list');
+
+    listEl.querySelectorAll('.reorder-up-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const idx = workingOrder.indexOf(btn.dataset.key);
+        if (idx <= 0) return;
+        [workingOrder[idx - 1], workingOrder[idx]] = [workingOrder[idx], workingOrder[idx - 1]];
+        render();
+      };
+    });
+    listEl.querySelectorAll('.reorder-down-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const idx = workingOrder.indexOf(btn.dataset.key);
+        if (idx < 0 || idx >= workingOrder.length - 1) return;
+        [workingOrder[idx + 1], workingOrder[idx]] = [workingOrder[idx], workingOrder[idx + 1]];
+        render();
+      };
+    });
+
+    // 電腦滑鼠拖曳:原生 HTML5 drag
+    listEl.querySelectorAll('.reorder-row').forEach((row) => {
+      row.ondragstart = (e) => {
+        e.dataTransfer.setData('text/plain', row.dataset.key);
+        row.classList.add('dragging');
+      };
+      row.ondragend = () => row.classList.remove('dragging');
+      row.ondragover = (e) => {
+        e.preventDefault();
+        const draggingEl = listEl.querySelector('.dragging');
+        if (!draggingEl) return;
+        const draggingKey = draggingEl.dataset.key;
+        if (draggingKey === row.dataset.key) return;
+        const fromIdx = workingOrder.indexOf(draggingKey);
+        const toIdx = workingOrder.indexOf(row.dataset.key);
+        if (fromIdx < 0 || toIdx < 0) return;
+        workingOrder.splice(fromIdx, 1);
+        workingOrder.splice(toIdx, 0, draggingKey);
+        render();
+      };
+    });
+
+    // 手機觸控拖曳:只在 ☰ 圖示上監聽,不影響整頁捲動
+    listEl.querySelectorAll('.reorder-handle').forEach((handle) => {
+      handle.onpointerdown = (e) => {
+        const row = handle.closest('.reorder-row');
+        const draggingKey = row.dataset.key;
+        handle.setPointerCapture(e.pointerId);
+
+        function onMove(ev) {
+          const rows = Array.from(listEl.querySelectorAll('.reorder-row'));
+          const hovered = rows.find((r) => {
+            const rect = r.getBoundingClientRect();
+            return ev.clientY >= rect.top && ev.clientY <= rect.bottom;
+          });
+          if (!hovered || hovered.dataset.key === draggingKey) return;
+          const fromIdx = workingOrder.indexOf(draggingKey);
+          const toIdx = workingOrder.indexOf(hovered.dataset.key);
+          if (fromIdx < 0 || toIdx < 0) return;
+          workingOrder.splice(fromIdx, 1);
+          workingOrder.splice(toIdx, 0, draggingKey);
+          render();
+        }
+        function onUp() {
+          document.removeEventListener('pointermove', onMove);
+          document.removeEventListener('pointerup', onUp);
+        }
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+      };
+    });
+  }
+
+  render();
+}
+
+function reorderRowHtml(key, idx, total) {
+  return `
+    <div class="card reorder-row" draggable="true" data-key="${key}" style="cursor:default;align-items:center;gap:10px;margin-bottom:8px;">
+      <span class="reorder-handle" style="touch-action:none;cursor:grab;font-size:20px;color:#9B8F7F;padding:4px;">☰</span>
+      <div style="flex:1;">${escapeHtml(SECTION_TITLES[key] || key)}</div>
+      <button type="button" class="btn-ghost reorder-up-btn" data-key="${key}" ${idx === 0 ? 'disabled' : ''} style="padding:4px 10px;">↑</button>
+      <button type="button" class="btn-ghost reorder-down-btn" data-key="${key}" ${idx === total - 1 ? 'disabled' : ''} style="padding:4px 10px;">↓</button>
+    </div>
+  `;
+}
+
+// ---------------- 各設定區塊的內容(順序由外部組裝,內容本身不受排序影響) ----------------
+
+function salonInfoSectionHtml(app) {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field">
+        <div class="field-label">工作室名稱</div>
+        <input type="text" id="f-salon-name" value="${escapeAttr(app.salon.salon_name)}" placeholder="工作室名稱" />
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        <div class="field-label">課程前同意書內容</div>
+        <textarea id="f-consent-template" rows="10">${escapeHtml(app.salon.consent_template)}</textarea>
+        <div class="field-hint">客戶第一次建立客戶卡時,會看到這段文字並簽名同意。之後修改不會影響客戶已經簽過的舊紀錄。</div>
+      </div>
+      <button class="primary-btn" id="save-btn" style="margin-top:18px;">儲存</button>
+    </div>
+  `;
+}
+
+function studioImagesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">工作室資訊圖片</div>
+      <div class="field-hint" style="margin-bottom:12px;">可以放工作室位置、地址、交通方式、停車資訊、門口照片、到店注意事項等,想放幾張就放幾張。每張可以命名、排序、設定是否預設勾選,新增預約完成後可以挑這次要用哪幾張一起傳給客戶。</div>
+      <div id="studio-info-images-list">載入中...</div>
+      <input type="file" id="studio-info-image-input" accept="image/*" class="hidden" />
+      <button type="button" class="secondary-btn" id="studio-info-add-btn" style="margin-top:10px;">＋新增工作室圖片</button>
+    </div>
+  `;
+}
+
+function lineTemplatesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:10px;">LINE 自動追蹤訊息模板</div>
+      <div class="field-hint" style="margin-bottom:12px;">這些是客戶頁面「LINE 自動追蹤」勾選清單裡的預設選項,可以自己修改標籤、天數與訊息內容。修改後不會影響已經建立好的排程。</div>
+      <div id="templates-list">載入中...</div>
+    </div>
+  `;
+}
+
+function messageTemplatesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">LINE 話術管理</div>
+      <div class="field-hint" style="margin-bottom:12px;">集中管理常用的固定話術(分類、常用標記),追蹤客戶時可以直接選一則帶入,不用每次重新打字。</div>
+      <button class="secondary-btn" id="open-message-templates-btn" style="margin-top:0;">前往話術管理</button>
+    </div>
+  `;
+}
+
+function birthdaySectionHtml(app) {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">生日 LINE 話術</div>
+      <div class="field-hint" style="margin-bottom:12px;">客戶生日當月會自動用這則訊息發送(需要客戶有開啟生日提醒、已綁定 LINE)。發送時間沿用系統既有的每日排程(約台灣時間早上10點),不支援自訂到分鐘。</div>
+      <div class="field">
+        <div class="field-label">訊息模板</div>
+        <textarea id="f-birthday-template" rows="5" placeholder="例如:嗨 {{客戶姓名}}～生日月快樂🎂">${escapeHtml(app.salon.birthday_message_template || '')}</textarea>
+        <div class="field-hint" style="margin-top:6px;">可用變數:${BIRTHDAY_VARS.map((v) => v.token).join('、')}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">優惠內容(選填,對應 {{優惠內容}})</div>
+        <input type="text" id="f-birthday-offer" value="${escapeAttr(app.salon.birthday_offer_text || '')}" placeholder="例如:生日折價券 $200,消費滿 $2,000 即可使用" />
+      </div>
+      <div class="field">
+        <div class="field-label">預覽(用範例資料)</div>
+        <div id="birthday-preview" class="note-box" style="white-space:pre-wrap;"></div>
+      </div>
+      <button class="primary-btn" id="save-birthday-btn" style="margin-top:6px;">儲存生日話術</button>
+
+      <div class="field" style="margin-top:16px;border-top:1px dashed #E5DCC8;padding-top:14px;">
+        <div class="field-label">發送測試訊息</div>
+        <select id="birthday-test-client">
+          <option value="">選擇一位已綁定 LINE 的客戶...</option>
+        </select>
+        <button class="secondary-btn" id="send-birthday-test-btn" style="margin-top:8px;">發送測試訊息</button>
+      </div>
+    </div>
+  `;
+}
+
+function appointmentConfirmSectionHtml(app) {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">預約確認話術設定</div>
+      <div class="field-hint" style="margin-bottom:12px;">新增/修改預約後,會用這則模板產生「複製預約資訊」的內容,方便直接貼到 LINE 給客人確認。</div>
+      <div class="field">
+        <div class="field-label">訊息模板</div>
+        <textarea id="f-appt-confirm-template" rows="5" placeholder="例如:${escapeAttr('您好 {{客戶姓名}},已為您預約 {{預約日期}} {{預約時間}},期待您的光臨!')}">${escapeHtml(app.salon.appointment_confirm_template || '')}</textarea>
+        <div class="field-hint" style="margin-top:6px;">可用變數:${APPOINTMENT_CONFIRM_VARS.map((v) => v.token).join('、')}</div>
+      </div>
+      <div class="field">
+        <div class="field-label">預覽(用範例資料)</div>
+        <div id="appt-confirm-template-preview" class="note-box" style="white-space:pre-wrap;"></div>
+      </div>
+      <button class="primary-btn" id="save-appt-confirm-template-btn" style="margin-top:6px;">儲存預約確認話術</button>
+    </div>
+  `;
+}
+
+function quickPhrasesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">常用話語管理</div>
+      <div class="field-hint" style="margin-bottom:12px;">先設定好常用的提醒句子(例如:不需提早到、停車提醒),預約完成後可以直接勾選加入預約確認訊息,不用每次重新打字。</div>
+      <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
+    </div>
+  `;
 }
 
 function setupStudioInfoImages(app) {

@@ -87,6 +87,36 @@ export async function syncLineContacts() {
   return json;
 }
 
+// 設定頁「測試 LINE 綁定」用:實際呼叫後端驗證目前 Token 是否有效、查目前綁定的官方帳號身分
+export async function checkLineConnection() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error('請重新登入後再試');
+
+  const res = await fetch('/api/line/check-connection', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || '測試失敗');
+  return json; // { ok, displayName, basicId, pictureUrl } 或 { ok:false, error }
+}
+
+// 設定頁「發送測試」用:直接沿用既有的 /api/line/send-message
+export async function sendLineTestMessage(to, message) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token;
+  if (!token) throw new Error('請重新登入後再試');
+
+  const res = await fetch('/api/line/send-message', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ to, message }),
+  });
+  const json = await res.json();
+  if (!res.ok || !json.ok) throw new Error(json.error || '發送失敗');
+}
+
 export async function getLineContactForClient(lineUserId) {
   if (!lineUserId) return null;
   const { data, error } = await supabase.from('line_contacts').select('*').eq('line_user_id', lineUserId).maybeSingle();

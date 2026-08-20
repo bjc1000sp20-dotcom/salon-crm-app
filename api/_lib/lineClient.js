@@ -44,3 +44,19 @@ export async function getProfile(userId) {
   }
   return res.json();
 }
+
+// 查詢目前 LINE_CHANNEL_ACCESS_TOKEN 綁定的官方帳號身分(displayName/basicId),
+// 用來讓「測試 LINE 綁定」實際驗證 Token 有效性,而不是只檢查有沒有設定這個環境變數
+export async function getBotInfo() {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) throw new Error('缺少 LINE_CHANNEL_ACCESS_TOKEN 環境變數');
+
+  const res = await fetch(`${LINE_API_BASE}/info`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`LINE API error ${res.status}: ${errText}`);
+  }
+  return res.json();
+}

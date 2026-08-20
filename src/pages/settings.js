@@ -1,7 +1,12 @@
 import { updateSalon, listClientsWithLine, getSignedUrl } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
-import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
+import {
+  ensureDefaultFollowUpTemplates,
+  updateFollowUpTemplate,
+  checkLineConnection,
+  sendLineTestMessage,
+} from '../lib/lineIntegration.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
 import { APPOINTMENT_CONFIRM_VARS, renderAppointmentConfirmVars } from '../lib/appointmentConfirm.js';
@@ -18,6 +23,7 @@ import { openStudioInfoViewer } from '../components/studioInfoViewer.js';
 // computeSectionOrder 就會自動把它排進「還沒存過順序」的區塊裡,不用改排序邏輯。
 const SECTION_KEYS = [
   'salonInfo',
+  'lineConnection',
   'studioImages',
   'lineTemplates',
   'messageTemplates',
@@ -27,6 +33,7 @@ const SECTION_KEYS = [
 ];
 const SECTION_TITLES = {
   salonInfo: '工作室名稱與同意書',
+  lineConnection: 'LINE 設定',
   studioImages: '工作室資訊圖片',
   lineTemplates: 'LINE 自動追蹤訊息模板',
   messageTemplates: 'LINE 話術管理',
@@ -51,6 +58,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   const order = computeSectionOrder(app);
   const sectionHtml = {
     salonInfo: salonInfoSectionHtml(app),
+    lineConnection: lineConnectionSectionHtml(),
     studioImages: studioImagesSectionHtml(),
     lineTemplates: lineTemplatesSectionHtml(),
     messageTemplates: messageTemplatesSectionHtml(),
@@ -117,6 +125,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   setupBirthdaySettings(app);
   setupAppointmentConfirmSettings(app);
   setupStudioInfoImages(app);
+  setupLineConnectionSettings(app);
 }
 
 // ---------------- 排序模式 ----------------
@@ -281,6 +290,27 @@ function salonInfoSectionHtml(app) {
   `;
 }
 
+function lineConnectionSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">LINE 設定</div>
+      <div class="field-hint" style="margin-bottom:12px;">如果更換了 LINE 官方帳號、Channel Access Token 或 Channel Secret,請先到 Vercel 後台更新環境變數並重新部署,再回來點下面按鈕確認連線。Channel Secret 與 Webhook 是否正常無法用這個按鈕檢查,請到 LINE Developers 後台的 Webhook 設定頁按「Verify」確認。</div>
+
+      <button type="button" class="primary-btn" id="line-check-btn" style="margin-top:0;">測試 LINE 綁定</button>
+      <div id="line-check-result" style="margin-top:10px;"></div>
+
+      <div class="field" style="margin-top:16px;border-top:1px dashed #E5DCC8;padding-top:14px;">
+        <div class="field-label">發送測試訊息</div>
+        <select id="line-test-client">
+          <option value="">選擇一位已綁定 LINE 的客戶...</option>
+        </select>
+        <button type="button" class="secondary-btn" id="line-send-test-btn" style="margin-top:8px;">發送測試</button>
+        <div id="line-send-result" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  `;
+}
+
 function studioImagesSectionHtml() {
   return `
     <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
@@ -371,6 +401,96 @@ function quickPhrasesSectionHtml() {
       <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
     </div>
   `;
+}
+
+function setupLineConnectionSettings(app) {
+  const checkBtn = document.getElementById('line-check-btn');
+  const checkResultEl = document.getElementById('line-check-result');
+  checkBtn.onclick = async () => {
+    checkBtn.disabled = true;
+    checkBtn.textContent = '測試中...';
+    checkResultEl.innerHTML = '';
+    try {
+      const result = await checkLineConnection();
+      if (result.ok) {
+        checkResultEl.innerHTML = `
+          <div class="note-box" style="color:#4E8B5C;">
+            LINE 串接正常 ✓<br />
+            目前綁定:${escapeHtml(result.displayName || '(無名稱)')}<br />
+            Basic ID:${escapeHtml(result.basicId || '未知')}
+          </div>
+        `;
+      } else {
+        checkResultEl.innerHTML = `
+          <div class="note-box" style="color:#B5533C;">
+            LINE 測試失敗<br />
+            原因:${escapeHtml(result.error || '未知錯誤')}
+          </div>
+        `;
+      }
+    } catch (err) {
+      checkResultEl.innerHTML = `<div class="note-box" style="color:#B5533C;">LINE 測試失敗<br />原因:${escapeHtml(err.message)}</div>`;
+    }
+    checkBtn.disabled = false;
+    checkBtn.textContent = '測試 LINE 綁定';
+  };
+
+  const testSelect = document.getElementById('line-test-client');
+  listClientsWithLine(app.salon.id)
+    .then((clients) => {
+      testSelect.innerHTML =
+        `<option value="">選擇一位已綁定 LINE 的客戶...</option>` +
+        clients.map((c) => `<option value="${c.line_user_id}" data-name="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+    })
+    .catch((err) => console.error(err));
+
+  const sendBtn = document.getElementById('line-send-test-btn');
+  const sendResultEl = document.getElementById('line-send-result');
+  sendBtn.onclick = async () => {
+    const option = testSelect.selectedOptions[0];
+    if (!testSelect.value) {
+      alert('請先選擇一位客戶');
+      return;
+    }
+    sendBtn.disabled = true;
+    sendBtn.textContent = '發送中...';
+    sendResultEl.innerHTML = '';
+    const clientName = option.dataset.name;
+    try {
+      await sendLineTestMessage(testSelect.value, 'CRM LINE 綁定測試成功');
+      sendResultEl.innerHTML = `
+        <div class="note-box" style="color:#4E8B5C;">
+          LINE 測試成功 ✓<br />
+          測試時間:${formatDateTime(new Date())}<br />
+          發送對象:${escapeHtml(clientName)}<br />
+          訊息狀態:發送成功
+        </div>
+      `;
+    } catch (err) {
+      sendResultEl.innerHTML = `
+        <div class="note-box" style="color:#B5533C;">
+          LINE 測試失敗<br />
+          原因:${escapeHtml(classifySendError(err.message))}
+        </div>
+      `;
+    }
+    sendBtn.disabled = false;
+    sendBtn.textContent = '發送測試';
+  };
+}
+
+function classifySendError(message) {
+  if (!message) return 'API 連線失敗,請確認網路狀況或稍後再試';
+  if (/error 401/i.test(message)) return 'Channel Access Token 無效或已過期';
+  if (/error 403/i.test(message)) return '權限不足';
+  if (/userId/i.test(message) && /error 400/i.test(message)) return 'userId 無效';
+  if (/(not.*friend|blocked|無法傳送)/i.test(message)) return '客戶可能已封鎖官方帳號或尚未加入好友';
+  if (/error 400/i.test(message)) return `請求格式錯誤(${message})`;
+  return message;
+}
+
+function formatDateTime(d) {
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function setupStudioInfoImages(app) {

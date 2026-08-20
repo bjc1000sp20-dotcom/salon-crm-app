@@ -9,7 +9,6 @@ import {
 } from '../lib/data.js';
 import { calcAge } from '../lib/calcAge.js';
 import { serviceById } from '../lib/services.js';
-import { supabase } from '../supabaseClient.js';
 import { openProductSaleModal } from '../components/productSaleModal.js';
 import { sourceName } from '../lib/sources.js';
 import { SKIN_TYPES } from '../lib/intakeOptions.js';
@@ -45,6 +44,7 @@ import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/message
 import { sendBirthdayNow, skipBirthdayThisYear } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openAppointmentConfirmCopyModal } from '../components/appointmentConfirmCopy.js';
+import { openClientDeleteModal } from '../components/clientDeleteModal.js';
 
 export async function renderClientDetail(app) {
   const clientId = app.params.clientId;
@@ -247,25 +247,9 @@ export async function renderClientDetail(app) {
   });
 
   const deleteZone = document.getElementById('delete-zone');
-  deleteZone.innerHTML = `<button class="delete-btn" id="delete-client-btn">刪除這位客戶</button>`;
+  deleteZone.innerHTML = `<button class="delete-btn" id="delete-client-btn">封存或刪除這位客戶</button>`;
   document.getElementById('delete-client-btn').onclick = () => {
-    deleteZone.innerHTML = `
-      <div class="confirm-box">
-        <div class="confirm-text">確定要刪除「${escapeHtml(client.name)}」嗎?此動作無法復原,連同所有到店紀錄、儲值紀錄一起刪除。</div>
-        <div class="confirm-row">
-          <button class="confirm-cancel" id="cancel-del">取消</button>
-          <button class="confirm-delete" id="confirm-del">確定刪除</button>
-        </div>
-      </div>
-    `;
-    document.getElementById('cancel-del').onclick = () => {
-      deleteZone.innerHTML = `<button class="delete-btn" id="delete-client-btn2">刪除這位客戶</button>`;
-      document.getElementById('delete-client-btn2').onclick = () => document.getElementById('delete-client-btn').click();
-    };
-    document.getElementById('confirm-del').onclick = async () => {
-      await supabase.from('clients').delete().eq('id', client.id);
-      app.navigate('clientList');
-    };
+    openClientDeleteModal(app, client, () => app.navigate('clientList'));
   };
 }
 

@@ -9,6 +9,7 @@ export async function listClientsWithLine(salonId) {
     .from('clients')
     .select('id, name, line_user_id')
     .eq('salon_id', salonId)
+    .eq('archived', false)
     .not('line_user_id', 'is', null)
     .order('name');
   if (error) throw error;
@@ -21,6 +22,7 @@ export async function searchClientsByName(salonId, query) {
     .from('clients')
     .select('id, name, phone')
     .eq('salon_id', salonId)
+    .eq('archived', false)
     .ilike('name', `%${query}%`)
     .limit(20);
   if (error) throw error;
@@ -47,6 +49,31 @@ export async function updateClient(clientId, fields) {
   const { data, error } = await supabase.from('clients').update(fields).eq('id', clientId).select().single();
   if (error) throw error;
   return data;
+}
+
+// 封存/恢復:不刪除任何資料,只是不再出現在一般客戶列表
+export async function archiveClient(clientId) {
+  return updateClient(clientId, { archived: true, archived_at: new Date().toISOString() });
+}
+
+export async function unarchiveClient(clientId) {
+  return updateClient(clientId, { archived: false, archived_at: null });
+}
+
+// 永久刪除:先清掉這位客戶的紙本歷史資料照片(避免留下孤兒檔案),
+// 其餘資料表(到店紀錄、儲值、療程、備註、標籤、預約、LINE 追蹤)交給資料庫既有的 cascade 外鍵處理
+export async function deleteClientPermanently(clientId) {
+  const { data: photos, error: photosErr } = await supabase
+    .from('client_archive_photos')
+    .select('storage_path')
+    .eq('client_id', clientId);
+  if (photosErr) throw photosErr;
+  if (photos && photos.length) {
+    await supabase.storage.from('client-archive').remove(photos.map((p) => p.storage_path));
+  }
+
+  const { error } = await supabase.from('clients').delete().eq('id', clientId);
+  if (error) throw error;
 }
 
 // 簽名圖檔上傳(只在新增客戶時呼叫一次)
@@ -235,7 +262,8 @@ export async function countAllClients(salonId) {
   const { count, error } = await supabase
     .from('clients')
     .select('id', { count: 'exact', head: true })
-    .eq('salon_id', salonId);
+    .eq('salon_id', salonId)
+    .eq('archived', false);
   if (error) throw error;
   return count || 0;
 }

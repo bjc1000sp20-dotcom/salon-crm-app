@@ -1,10 +1,11 @@
-import { getBirthdayClients } from '../lib/data.js';
+import { getBirthdayClients, unarchiveClient } from '../lib/data.js';
 import { listClientsWithMeta } from '../lib/clientDirectory.js';
 import { ensureDefaultTags } from '../lib/tags.js';
 import { calcAge } from '../lib/calcAge.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { birthdayBannerHtml } from '../components/birthdayBanner.js';
+import { openClientDeleteModal } from '../components/clientDeleteModal.js';
 import { SERVICES } from '../lib/services.js';
 import { SOURCES } from '../lib/sources.js';
 
@@ -41,6 +42,9 @@ export async function renderClientList(app) {
         </div>
         <button class="btn-ghost" id="filter-btn" style="height:38px;white-space:nowrap;">篩選<span id="filter-count"></span></button>
       </div>
+      <div style="padding:0 20px 10px;">
+        <button type="button" class="btn-ghost" id="archived-toggle-btn" style="padding:6px 10px;font-size:12.5px;">已封存客戶</button>
+      </div>
       <div class="list-scroll" id="list-scroll">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
       </div>
@@ -57,9 +61,19 @@ export async function renderClientList(app) {
   let allTags = [];
   let filters = { ...EMPTY_FILTERS };
   let search = app.params.search || '';
+  let viewMode = 'active'; // active | archived
+
+  async function loadClients() {
+    allClients = await listClientsWithMeta(app.salon.id, { archived: viewMode === 'archived' });
+  }
 
   try {
-    [allClients, allTags] = await Promise.all([listClientsWithMeta(app.salon.id), ensureDefaultTags(app.salon.id)]);
+    await Promise.all([
+      loadClients(),
+      ensureDefaultTags(app.salon.id).then((t) => {
+        allTags = t;
+      }),
+    ]);
   } catch (err) {
     console.error(err);
     document.getElementById('list-scroll').innerHTML = `<div class="empty-state"><div class="empty-title">讀取失敗</div><div class="empty-body">${escapeHtml(err.message)}</div></div>`;
@@ -67,6 +81,19 @@ export async function renderClientList(app) {
   }
 
   const birthdayClients = await getBirthdayClients(app.salon.id, new Date().getMonth() + 1).catch(() => []);
+
+  document.getElementById('archived-toggle-btn').onclick = async () => {
+    viewMode = viewMode === 'active' ? 'archived' : 'active';
+    document.getElementById('archived-toggle-btn').textContent = viewMode === 'archived' ? '返回客戶列表' : '已封存客戶';
+    document.getElementById('list-scroll').innerHTML = `<div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>`;
+    try {
+      await loadClients();
+    } catch (err) {
+      document.getElementById('list-scroll').innerHTML = `<div class="empty-state"><div class="empty-title">讀取失敗</div><div class="empty-body">${escapeHtml(err.message)}</div></div>`;
+      return;
+    }
+    renderList();
+  };
 
   function updateFilterCount() {
     const count =
@@ -88,15 +115,19 @@ export async function renderClientList(app) {
     if (!listEl) return;
 
     const filtered = allClients.filter((c) => matchesSearch(c, search) && matchesFilters(c, filters));
-    const showBanner = !search && isEmptyFilters(filters);
+    const showBanner = viewMode === 'active' && !search && isEmptyFilters(filters);
 
     if (!filtered.length) {
       listEl.innerHTML =
         (showBanner ? birthdayBannerHtml(birthdayClients) : '') +
         `<div class="empty-state">
           <div class="empty-icon">◐</div>
-          <div class="empty-title">${allClients.length ? '找不到符合的客戶' : '還沒有任何客戶資料'}</div>
-          <div class="empty-body">${allClients.length ? '試試看其他關鍵字或調整篩選條件' : '點右上角「＋」建立第一張客戶卡'}</div>
+          <div class="empty-title">${
+            allClients.length ? '找不到符合的客戶' : viewMode === 'archived' ? '目前沒有已封存的客戶' : '還沒有任何客戶資料'
+          }</div>
+          <div class="empty-body">${
+            allClients.length ? '試試看其他關鍵字或調整篩選條件' : viewMode === 'archived' ? '' : '點右上角「＋」建立第一張客戶卡'
+          }</div>
         </div>`;
       return;
     }
@@ -105,24 +136,41 @@ export async function renderClientList(app) {
       .map((c) => {
         const age = calcAge(c.birth_date);
         const initial = (c.name || '?').slice(0, 1);
+        const actionsHtml =
+          viewMode === 'archived'
+            ? `
+              <button type="button" class="tag cl-view-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
+              <button type="button" class="tag cl-restore-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#E7EFE4;color:#4E8B5C;">恢復</button>
+              <button type="button" class="tag cl-delete-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">永久刪除</button>
+            `
+            : `
+              <button type="button" class="tag cl-view-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
+              <button type="button" class="tag cl-edit-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+              <button type="button" class="tag cl-more-btn" data-id="${c.id}" style="cursor:pointer;border:none;background:#F0EADA;">⋯</button>
+            `;
         return `
-          <button class="card" data-id="${c.id}">
-            <div class="card-avatar">${escapeHtml(initial)}</div>
-            <div class="card-main">
-              <div class="card-name-row">
-                <span class="card-name">${escapeHtml(c.name)}</span>
-                ${age != null ? `<span class="card-age">${age} 歲</span>` : ''}
-              </div>
-              <div class="card-sub">${escapeHtml(c.phone || '未留電話')}${c.lastVisitDate ? ` ・ 最近到店 ${c.lastVisitDate}` : ''}</div>
-              <div style="margin-top:4px;">
-                ${
-                  c.line_user_id
-                    ? `<span class="tag" style="background:#E7EFE4;color:#4E8B5C;">LINE ✓</span>`
-                    : `<span class="tag" style="background:#F0EADA;color:#9B8F7F;">尚未綁定 LINE</span>`
-                }
+          <div class="card" data-id="${c.id}" style="cursor:pointer;flex-direction:column;align-items:stretch;">
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div class="card-avatar">${escapeHtml(initial)}</div>
+              <div class="card-main">
+                <div class="card-name-row">
+                  <span class="card-name">${escapeHtml(c.name)}</span>
+                  ${age != null ? `<span class="card-age">${age} 歲</span>` : ''}
+                </div>
+                <div class="card-sub">${escapeHtml(c.phone || '未留電話')}${c.lastVisitDate ? ` ・ 最近到店 ${c.lastVisitDate}` : ''}</div>
+                <div style="margin-top:4px;">
+                  ${
+                    c.line_user_id
+                      ? `<span class="tag" style="background:#E7EFE4;color:#4E8B5C;">LINE ✓</span>`
+                      : `<span class="tag" style="background:#F0EADA;color:#9B8F7F;">尚未綁定 LINE</span>`
+                  }
+                </div>
               </div>
             </div>
-          </button>
+            <div class="visit-tags" style="margin-top:10px;">
+              ${actionsHtml}
+            </div>
+          </div>
         `;
       })
       .join('');
@@ -130,7 +178,54 @@ export async function renderClientList(app) {
     listEl.innerHTML = (showBanner ? birthdayBannerHtml(birthdayClients) : '') + cardsHtml;
 
     listEl.querySelectorAll('.card').forEach((card) => {
-      card.onclick = () => app.navigate('clientDetail', { clientId: card.dataset.id });
+      card.onclick = (e) => {
+        if (e.target.closest('button')) return;
+        app.navigate('clientDetail', { clientId: card.dataset.id });
+      };
+    });
+    listEl.querySelectorAll('.cl-view-btn').forEach((btn) => {
+      btn.onclick = () => app.navigate('clientDetail', { clientId: btn.dataset.id });
+    });
+    listEl.querySelectorAll('.cl-edit-btn').forEach((btn) => {
+      btn.onclick = () => app.navigate('clientForm', { mode: 'edit', clientId: btn.dataset.id });
+    });
+    listEl.querySelectorAll('.cl-more-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const client = allClients.find((c) => c.id === btn.dataset.id);
+        if (!client) return;
+        openClientDeleteModal(app, client, () => {
+          allClients = allClients.filter((c) => c.id !== client.id);
+          renderList();
+        });
+      };
+    });
+    listEl.querySelectorAll('.cl-restore-btn').forEach((btn) => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          await unarchiveClient(btn.dataset.id);
+          allClients = allClients.filter((c) => c.id !== btn.dataset.id);
+          renderList();
+        } catch (err) {
+          alert('恢復失敗:' + err.message);
+          btn.disabled = false;
+        }
+      };
+    });
+    listEl.querySelectorAll('.cl-delete-btn').forEach((btn) => {
+      btn.onclick = () => {
+        const client = allClients.find((c) => c.id === btn.dataset.id);
+        if (!client) return;
+        openClientDeleteModal(
+          app,
+          client,
+          () => {
+            allClients = allClients.filter((c) => c.id !== client.id);
+            renderList();
+          },
+          { skipToDelete: true }
+        );
+      };
     });
   }
 

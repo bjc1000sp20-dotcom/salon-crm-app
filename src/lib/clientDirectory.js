@@ -2,7 +2,7 @@ import { supabase } from '../supabaseClient.js';
 
 // 全站搜尋／客戶列表篩選用:一次把這家店所有客戶 + 到店/購買/療程/標籤/備註/待追蹤狀態抓回來,
 // 在前端組成每位客戶的統計摘要。小型工作室資料量不大,這樣做比為每個篩選條件各寫一支 RPC 簡單很多。
-export async function listClientsWithMeta(salonId) {
+export async function listClientsWithMeta(salonId, { archived = false } = {}) {
   const [
     { data: clients, error: clientsErr },
     { data: visits, error: visitsErr },
@@ -13,7 +13,7 @@ export async function listClientsWithMeta(salonId) {
     { data: pendingFollowUps, error: fuErr },
     { data: noteRows, error: noteErr },
   ] = await Promise.all([
-    supabase.from('clients').select('*').eq('salon_id', salonId),
+    supabase.from('clients').select('*').eq('salon_id', salonId).eq('archived', archived),
     supabase.from('visits').select('client_id, visit_date, amount, visit_services(service_id)').eq('salon_id', salonId),
     supabase.from('product_sales').select('client_id, amount').eq('salon_id', salonId),
     supabase.from('client_tags').select('client_id, tag_id').eq('salon_id', salonId),

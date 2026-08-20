@@ -1,10 +1,12 @@
-import { updateSalon, listClientsWithLine } from '../lib/data.js';
+import { updateSalon, listClientsWithLine, getSignedUrl } from '../lib/data.js';
 import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { ensureDefaultFollowUpTemplates, updateFollowUpTemplate } from '../lib/lineIntegration.js';
 import { ensureDefaultMessageTemplates, renderMessageVars } from '../lib/messageTemplates.js';
 import { BIRTHDAY_VARS, renderBirthdayVars, sendTestBirthdayMessage } from '../lib/birthdays.js';
 import { APPOINTMENT_CONFIRM_VARS, renderAppointmentConfirmVars } from '../lib/appointmentConfirm.js';
+import { uploadStudioInfoImage, deleteStudioInfoImage } from '../lib/studioInfo.js';
+import { openStudioInfoViewer } from '../components/studioInfoViewer.js';
 
 export function renderSettings(app) {
   app.root.innerHTML = `
@@ -31,6 +33,17 @@ export function renderSettings(app) {
             <div class="field-hint">客戶第一次建立客戶卡時,會看到這段文字並簽名同意。之後修改不會影響客戶已經簽過的舊紀錄。</div>
           </div>
           <button class="primary-btn" id="save-btn" style="margin-top:18px;">儲存</button>
+        </div>
+
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:6px;">工作室資訊圖片</div>
+          <div class="field-hint" style="margin-bottom:12px;">可以放工作室位置、地址、交通方式、停車資訊、門口照片或到店注意事項,新增預約完成後會自動顯示,方便一起傳給客戶。</div>
+          <div id="studio-info-image-preview"></div>
+          <input type="file" id="studio-info-image-input" accept="image/*" class="hidden" />
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button type="button" class="secondary-btn" id="studio-info-upload-btn" style="margin-top:0;">上傳/更換圖片</button>
+            <button type="button" class="secondary-btn" id="studio-info-delete-btn" style="margin-top:0;">刪除圖片</button>
+          </div>
         </div>
 
         <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
@@ -87,6 +100,12 @@ export function renderSettings(app) {
           <button class="primary-btn" id="save-appt-confirm-template-btn" style="margin-top:6px;">儲存預約確認話術</button>
         </div>
 
+        <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+          <div class="field-label" style="margin-bottom:6px;">常用話語管理</div>
+          <div class="field-hint" style="margin-bottom:12px;">先設定好常用的提醒句子(例如:不需提早到、停車提醒),預約完成後可以直接勾選加入預約確認訊息,不用每次重新打字。</div>
+          <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
+        </div>
+
         <div style="text-align:center;color:#B8AE9A;font-size:12px;margin:20px 0 90px;">版本 ${__APP_VERSION__.slice(0, 16).replace('T', ' ')}</div>
       </div>
       ${tabBarHtml('settings')}
@@ -97,6 +116,7 @@ export function renderSettings(app) {
   bindHomeButton(app);
   document.getElementById('logout-btn').onclick = () => app.signOut();
   document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
+  document.getElementById('open-quick-phrases-btn').onclick = () => app.navigate('quickPhrases');
 
   const saveBtn = document.getElementById('save-btn');
   saveBtn.onclick = async () => {
@@ -127,6 +147,62 @@ export function renderSettings(app) {
   loadTemplates(app);
   setupBirthdaySettings(app);
   setupAppointmentConfirmSettings(app);
+  setupStudioInfoImage(app);
+}
+
+function setupStudioInfoImage(app) {
+  const previewEl = document.getElementById('studio-info-image-preview');
+  const uploadBtn = document.getElementById('studio-info-upload-btn');
+  const deleteBtn = document.getElementById('studio-info-delete-btn');
+  const inputEl = document.getElementById('studio-info-image-input');
+
+  async function renderPreview() {
+    if (!app.salon.studio_info_image_path) {
+      previewEl.innerHTML = `<div class="field-hint">尚未上傳圖片</div>`;
+      deleteBtn.style.display = 'none';
+      return;
+    }
+    deleteBtn.style.display = '';
+    previewEl.innerHTML = `<div class="field-hint">載入中...</div>`;
+    try {
+      const url = await getSignedUrl('studio-info', app.salon.studio_info_image_path);
+      previewEl.innerHTML = `<img src="${url}" style="max-width:160px;max-height:160px;border-radius:10px;object-fit:contain;cursor:pointer;" id="studio-info-preview-img" />`;
+      document.getElementById('studio-info-preview-img').onclick = () => openStudioInfoViewer(url);
+    } catch (err) {
+      previewEl.innerHTML = `<div class="field-hint">圖片讀取失敗:${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  uploadBtn.onclick = () => inputEl.click();
+  inputEl.onchange = async () => {
+    const file = inputEl.files[0];
+    inputEl.value = '';
+    if (!file) return;
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = '上傳中...';
+    try {
+      const updated = await uploadStudioInfoImage(app.salon.id, file);
+      app.salon = updated;
+      await renderPreview();
+    } catch (err) {
+      alert('上傳失敗:' + err.message);
+    }
+    uploadBtn.disabled = false;
+    uploadBtn.textContent = '上傳/更換圖片';
+  };
+
+  deleteBtn.onclick = async () => {
+    if (!confirm('確定要刪除工作室資訊圖片嗎?')) return;
+    try {
+      const updated = await deleteStudioInfoImage(app.salon.id, app.salon.studio_info_image_path);
+      app.salon = updated;
+      await renderPreview();
+    } catch (err) {
+      alert('刪除失敗:' + err.message);
+    }
+  };
+
+  renderPreview();
 }
 
 function setupAppointmentConfirmSettings(app) {

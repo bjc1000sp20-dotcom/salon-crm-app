@@ -24,6 +24,7 @@ import { renderLineHub } from './pages/lineHub.js';
 import { renderMessageTemplates } from './pages/messageTemplates.js';
 import { renderBirthdays } from './pages/birthdays.js';
 import { renderManageServices } from './pages/manageServices.js';
+import { renderQuickPhrases } from './pages/quickPhrases.js';
 import { loadServices } from './lib/services.js';
 
 const root = document.getElementById('app');
@@ -91,6 +92,8 @@ const app = {
         return renderBirthdays(this);
       case 'manageServices':
         return renderManageServices(this);
+      case 'quickPhrases':
+        return renderQuickPhrases(this);
       case 'settings':
         return renderSettings(this);
       default:

@@ -1,13 +1,13 @@
 import { signIn, requestPasswordReset } from '../lib/auth.js';
 import { ensureSalon } from '../lib/auth.js';
 import { passwordFieldHtml, bindPasswordToggle } from '../lib/passwordToggle.js';
+import { setRememberMe } from '../supabaseClient.js';
 
 export function renderLogin(app) {
   app.root.innerHTML = `
     <main class="auth-page">
       <form id="login-form" class="auth-card">
-        <h1>客戶管理系統</h1>
-        <p class="auth-subtitle">請輸入帳號密碼登入</p>
+        <h1>HYANCENTER</h1>
 
         <div class="field">
           <label class="field-label" for="email">Email</label>
@@ -15,12 +15,16 @@ export function renderLogin(app) {
         </div>
         <div class="field">
           ${passwordFieldHtml('password', '密碼', 'current-password')}
-          <div style="text-align:right;margin-top:6px;">
-            <button type="button" id="forgot-password-btn" class="link-btn">忘記密碼?</button>
-          </div>
+        </div>
+        <div class="field" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="remember-me" checked style="width:16px;height:16px;" />
+          <label for="remember-me" style="font-size:13px;color:var(--text);">記住我</label>
         </div>
 
         <button type="submit" id="login-btn" class="primary-btn">登入</button>
+        <div style="text-align:center;margin-top:10px;">
+          <button type="button" id="forgot-password-btn" class="link-btn">忘記密碼?</button>
+        </div>
         <button type="button" id="go-register" class="secondary-btn">還沒有帳號?建立新帳號</button>
         <p id="login-error" class="error-text" hidden></p>
       </form>
@@ -44,7 +48,9 @@ export function renderLogin(app) {
 
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
+    const remember = document.getElementById('remember-me').checked;
 
+    setRememberMe(remember);
     const { data, error } = await signIn(email, password);
     if (error) {
       errorEl.textContent = error.message === 'Invalid login credentials' ? '帳號或密碼錯誤' : error.message;
@@ -102,7 +108,7 @@ function openForgotPasswordModal() {
       confirmBtn.textContent = '寄送重設密碼信';
       return;
     }
-    msgEl.textContent = '已寄出重設密碼信,請去信箱收信並點裡面的連結。';
+    msgEl.textContent = '重設密碼連結已寄到你的信箱,請到 Email 查看。';
     msgEl.hidden = false;
     confirmBtn.hidden = true;
   };

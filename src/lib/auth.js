@@ -23,6 +23,16 @@ export function updatePassword(newPassword) {
   return supabase.auth.updateUser({ password: newPassword });
 }
 
+// 已登入狀態下自行修改密碼:先用「目前密碼」重新驗證身分,驗證通過才真的換新密碼,
+// 避免裝置沒鎖、有人趁機打開 CRM 就能直接改密碼把原本使用者鎖在外面
+export async function changePassword(email, currentPassword, newPassword) {
+  const { error: verifyErr } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+  if (verifyErr) {
+    return { error: { message: '目前密碼不正確' } };
+  }
+  return updatePassword(newPassword);
+}
+
 export async function getSession() {
   const { data } = await supabase.auth.getSession();
   return data.session;

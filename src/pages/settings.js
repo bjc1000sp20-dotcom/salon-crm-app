@@ -18,11 +18,14 @@ import {
   reorderStudioImages,
 } from '../lib/studioInfo.js';
 import { openStudioInfoViewer } from '../components/studioInfoViewer.js';
+import { changePassword } from '../lib/auth.js';
+import { passwordFieldHtml, bindPasswordToggle } from '../lib/passwordToggle.js';
 
 // 設定頁區塊的排序註冊表:以後再新增設定區塊,只要在這裡多加一筆,
 // computeSectionOrder 就會自動把它排進「還沒存過順序」的區塊裡,不用改排序邏輯。
 const SECTION_KEYS = [
   'salonInfo',
+  'changePassword',
   'lineConnection',
   'studioImages',
   'lineTemplates',
@@ -35,6 +38,7 @@ const SECTION_KEYS = [
 ];
 const SECTION_TITLES = {
   salonInfo: '工作室名稱與同意書',
+  changePassword: '修改密碼',
   lineConnection: 'LINE 設定',
   studioImages: '工作室資訊圖片',
   lineTemplates: 'LINE 自動追蹤訊息模板',
@@ -62,6 +66,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   const order = computeSectionOrder(app);
   const sectionHtml = {
     salonInfo: salonInfoSectionHtml(app),
+    changePassword: changePasswordSectionHtml(),
     lineConnection: lineConnectionSectionHtml(),
     studioImages: studioImagesSectionHtml(),
     lineTemplates: lineTemplatesSectionHtml(),
@@ -134,6 +139,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   setupAppointmentConfirmSettings(app);
   setupStudioInfoImages(app);
   setupLineConnectionSettings(app);
+  setupChangePasswordSettings(app);
 }
 
 // ---------------- 排序模式 ----------------
@@ -298,6 +304,28 @@ function salonInfoSectionHtml(app) {
   `;
 }
 
+function changePasswordSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">修改密碼</div>
+      <div class="field-hint" style="margin-bottom:12px;">確認目前密碼後,即可設定新密碼。</div>
+      <div class="field">
+        ${passwordFieldHtml('cp-current-password', '目前密碼', 'current-password')}
+      </div>
+      <div class="field">
+        ${passwordFieldHtml('cp-new-password', '新密碼', 'new-password', 'minlength="6"')}
+        <div class="field-hint">至少 6 個字元</div>
+      </div>
+      <div class="field" style="margin-bottom:0;">
+        ${passwordFieldHtml('cp-confirm-password', '再次輸入新密碼', 'new-password', 'minlength="6"')}
+      </div>
+      <p id="cp-error" class="error-text" hidden></p>
+      <p id="cp-success" class="field-hint" style="color:#4E8B5C;" hidden></p>
+      <button type="button" class="primary-btn" id="cp-submit-btn" style="margin-top:12px;">修改密碼</button>
+    </div>
+  `;
+}
+
 function lineConnectionSectionHtml() {
   return `
     <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
@@ -429,6 +457,55 @@ function manageServicesSectionHtml() {
       <button class="secondary-btn" id="open-manage-services-btn" style="margin-top:0;">前往服務項目管理</button>
     </div>
   `;
+}
+
+function setupChangePasswordSettings(app) {
+  bindPasswordToggle('cp-current-password');
+  bindPasswordToggle('cp-new-password');
+  bindPasswordToggle('cp-confirm-password');
+
+  const errorEl = document.getElementById('cp-error');
+  const successEl = document.getElementById('cp-success');
+  const btn = document.getElementById('cp-submit-btn');
+
+  btn.onclick = async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const currentPassword = document.getElementById('cp-current-password').value;
+    const newPassword = document.getElementById('cp-new-password').value;
+    const confirmPassword = document.getElementById('cp-confirm-password').value;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      errorEl.textContent = '請填寫所有欄位';
+      errorEl.hidden = false;
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      errorEl.textContent = '兩次輸入的新密碼不一致,請重新輸入';
+      errorEl.hidden = false;
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = '修改中...';
+    const { error } = await changePassword(app.session.user.email, currentPassword, newPassword);
+    if (error) {
+      errorEl.textContent = error.message;
+      errorEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = '修改密碼';
+      return;
+    }
+
+    document.getElementById('cp-current-password').value = '';
+    document.getElementById('cp-new-password').value = '';
+    document.getElementById('cp-confirm-password').value = '';
+    successEl.textContent = '密碼修改成功';
+    successEl.hidden = false;
+    btn.disabled = false;
+    btn.textContent = '修改密碼';
+  };
 }
 
 function setupLineConnectionSettings(app) {

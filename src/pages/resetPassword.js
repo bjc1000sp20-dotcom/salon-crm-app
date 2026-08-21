@@ -14,17 +14,23 @@ export function renderResetPassword(app) {
           ${passwordFieldHtml('new-password', '新密碼', 'new-password', 'minlength="6"')}
           <p class="field-hint">至少 6 個字元</p>
         </div>
+        <div class="field">
+          ${passwordFieldHtml('confirm-password', '再次輸入新密碼', 'new-password', 'minlength="6"')}
+        </div>
 
         <button type="submit" id="reset-btn" class="primary-btn">更新密碼</button>
         <p id="reset-error" class="error-text" hidden></p>
+        <p id="reset-success" class="field-hint" hidden></p>
       </form>
     </main>
   `;
 
   bindPasswordToggle('new-password');
+  bindPasswordToggle('confirm-password');
 
   const form = document.getElementById('reset-form');
   const errorEl = document.getElementById('reset-error');
+  const successEl = document.getElementById('reset-success');
   const btn = document.getElementById('reset-btn');
 
   form.addEventListener('submit', async (e) => {
@@ -34,6 +40,16 @@ export function renderResetPassword(app) {
     btn.textContent = '更新中...';
 
     const password = document.getElementById('new-password').value;
+    const confirmPassword = document.getElementById('confirm-password').value;
+
+    if (password !== confirmPassword) {
+      errorEl.textContent = '兩次輸入的密碼不一致,請重新輸入';
+      errorEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = '更新密碼';
+      return;
+    }
+
     const { error } = await updatePassword(password);
     if (error) {
       errorEl.textContent = error.message;
@@ -48,6 +64,10 @@ export function renderResetPassword(app) {
     } catch (err) {
       console.error(err);
     }
-    app.navigate('dashboard');
+
+    form.querySelector('.primary-btn').hidden = true;
+    successEl.textContent = '密碼修改成功,請使用新密碼登入。';
+    successEl.hidden = false;
+    setTimeout(() => app.navigate('dashboard'), 1200);
   });
 }

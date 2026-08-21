@@ -12,14 +12,14 @@ export async function renderQuickPhrases(app) {
     <div class="screen">
       <div class="form-header">
         <button class="icon-btn" id="back-btn">←</button>
-        <div class="form-header-title">常用話語管理</div>
+        <div class="form-header-title">工作室常用話語管理</div>
         ${homeButtonHtml()}
       </div>
       <div class="list-scroll" id="qp-list" style="padding-top:16px;">
         <div style="text-align:center;color:#9B8F7F;padding:40px 0;">載入中...</div>
       </div>
       <div class="form-footer">
-        <button class="primary-btn" id="qp-add-btn">＋ 新增常用話語</button>
+        <button class="primary-btn" id="qp-add-btn">＋ 新增工作室常用話語</button>
       </div>
     </div>
   `;
@@ -50,7 +50,7 @@ async function loadList(app) {
 
   listEl.innerHTML = phrases.length
     ? phrases.map((p, idx) => rowHtml(p, idx, phrases.length)).join('')
-    : `<div class="empty-state"><div class="empty-body">還沒有任何常用話語</div></div>`;
+    : `<div class="empty-state"><div class="empty-body">還沒有任何工作室常用話語</div></div>`;
 
   listEl.querySelectorAll('.qp-up-btn').forEach((btn) => {
     btn.onclick = async () => {
@@ -88,7 +88,7 @@ async function loadList(app) {
   });
   listEl.querySelectorAll('.qp-delete-btn').forEach((btn) => {
     btn.onclick = async () => {
-      if (!confirm('確定要刪除這則常用話語嗎?')) return;
+      if (!confirm('確定要刪除這則工作室常用話語嗎?')) return;
       await deleteQuickPhrase(btn.dataset.id);
       await loadList(app);
     };
@@ -121,7 +121,7 @@ function openQuickPhraseModal(phrase, onSave) {
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
     <div class="modal-box">
-      <div class="modal-title">${phrase ? '編輯常用話語' : '新增常用話語'}</div>
+      <div class="modal-title">${phrase ? '編輯工作室常用話語' : '新增工作室常用話語'}</div>
       <div class="field">
         <div class="field-label">話語名稱</div>
         <input type="text" id="qp-name" value="${escapeAttr(phrase?.name || '')}" placeholder="例如:不需提早到" />

@@ -33,7 +33,7 @@ export function openAppointmentConfirmCopyModal(app, { clientName, appointmentDa
         <textarea id="appt-confirm-preview" rows="6" placeholder="尚未設定話術,可到設定頁「預約確認話術設定」新增,或直接在這裡打字">${escapeHtml(baseMessage)}</textarea>
       </div>
       <div class="field">
-        <div class="field-label">加入常用話語</div>
+        <div class="field-label">加入工作室常用話語</div>
         <div id="appt-quick-phrases-list" class="field-hint">載入中...</div>
       </div>
       <div class="field">
@@ -116,7 +116,7 @@ export function openAppointmentConfirmCopyModal(app, { clientName, appointmentDa
       quickPhrases = phrases;
       const listEl = document.getElementById('appt-quick-phrases-list');
       if (!phrases.length) {
-        listEl.textContent = '尚未設定常用話語,可到設定頁「常用話語管理」新增';
+        listEl.textContent = '尚未設定工作室常用話語,可到設定頁「工作室常用話語管理」新增';
         return;
       }
       listEl.innerHTML = phrases
@@ -138,7 +138,7 @@ export function openAppointmentConfirmCopyModal(app, { clientName, appointmentDa
       if (selectedPhraseIds.size) rebuildMessage();
     })
     .catch((err) => {
-      document.getElementById('appt-quick-phrases-list').textContent = '常用話語讀取失敗:' + err.message;
+      document.getElementById('appt-quick-phrases-list').textContent = '工作室常用話語讀取失敗:' + err.message;
     });
 
   listEnabledStudioImages(app.salon.id)

@@ -41,7 +41,7 @@ const SECTION_TITLES = {
   messageTemplates: 'LINE 話術管理',
   birthdaySettings: '生日 LINE 話術',
   appointmentConfirm: '預約確認話術設定',
-  quickPhrases: '常用話語管理',
+  quickPhrases: '工作室常用話語管理',
   manageServices: '服務項目管理',
   leadStatuses: '追蹤狀態管理',
 };
@@ -404,9 +404,9 @@ function appointmentConfirmSectionHtml(app) {
 function quickPhrasesSectionHtml() {
   return `
     <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
-      <div class="field-label" style="margin-bottom:6px;">常用話語管理</div>
+      <div class="field-label" style="margin-bottom:6px;">工作室常用話語管理</div>
       <div class="field-hint" style="margin-bottom:12px;">先設定好常用的提醒句子(例如:不需提早到、停車提醒),預約完成後可以直接勾選加入預約確認訊息,不用每次重新打字。</div>
-      <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往常用話語管理</button>
+      <button class="secondary-btn" id="open-quick-phrases-btn" style="margin-top:0;">前往工作室常用話語管理</button>
     </div>
   `;
 }

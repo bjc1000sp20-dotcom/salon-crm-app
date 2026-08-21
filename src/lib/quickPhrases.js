@@ -36,7 +36,7 @@ export async function deleteQuickPhrase(id) {
   if (error) throw error;
 }
 
-// 把整批常用話語的排序寫回去,orderedIds 是重新排序後的 id 陣列
+// 把整批工作室常用話語的排序寫回去,orderedIds 是重新排序後的 id 陣列
 export async function reorderQuickPhrases(orderedIds) {
   for (let i = 0; i < orderedIds.length; i++) {
     const { error } = await supabase.from('quick_phrases').update({ sort_order: i + 1 }).eq('id', orderedIds[i]);

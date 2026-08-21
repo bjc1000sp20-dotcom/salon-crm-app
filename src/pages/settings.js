@@ -31,6 +31,7 @@ const SECTION_KEYS = [
   'appointmentConfirm',
   'quickPhrases',
   'leadStatuses',
+  'manageServices',
 ];
 const SECTION_TITLES = {
   salonInfo: '工作室名稱與同意書',
@@ -41,6 +42,7 @@ const SECTION_TITLES = {
   birthdaySettings: '生日 LINE 話術',
   appointmentConfirm: '預約確認話術設定',
   quickPhrases: '常用話語管理',
+  manageServices: '服務項目管理',
   leadStatuses: '追蹤狀態管理',
 };
 
@@ -68,6 +70,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
     appointmentConfirm: appointmentConfirmSectionHtml(app),
     quickPhrases: quickPhrasesSectionHtml(),
     leadStatuses: leadStatusesSectionHtml(),
+    manageServices: manageServicesSectionHtml(),
   };
 
   app.root.innerHTML = `
@@ -97,6 +100,7 @@ export function renderSettings(app, { reorderMode = false } = {}) {
   document.getElementById('open-message-templates-btn').onclick = () => app.navigate('messageTemplates');
   document.getElementById('open-quick-phrases-btn').onclick = () => app.navigate('quickPhrases');
   document.getElementById('open-lead-statuses-btn').onclick = () => app.navigate('leadStatuses');
+  document.getElementById('open-manage-services-btn').onclick = () => app.navigate('manageServices');
   document.getElementById('open-reorder-btn').onclick = () => renderSettings(app, { reorderMode: true });
 
   const saveBtn = document.getElementById('save-btn');
@@ -413,6 +417,16 @@ function leadStatusesSectionHtml() {
       <div class="field-label" style="margin-bottom:6px;">追蹤狀態管理</div>
       <div class="field-hint" style="margin-bottom:12px;">管理「提醒追蹤客戶」的目前進度選項(例如:待付訂金、考慮中),可以自己新增、修改、排序。</div>
       <button class="secondary-btn" id="open-lead-statuses-btn" style="margin-top:0;">前往追蹤狀態管理</button>
+    </div>
+  `;
+}
+
+function manageServicesSectionHtml() {
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-top:16px;">
+      <div class="field-label" style="margin-bottom:6px;">服務項目管理</div>
+      <div class="field-hint" style="margin-bottom:12px;">新增預約、到店紀錄等所有選服務項目的地方,都共用這裡的同一份清單。可以新增、改名、排序、啟用/停用。</div>
+      <button class="secondary-btn" id="open-manage-services-btn" style="margin-top:0;">前往服務項目管理</button>
     </div>
   `;
 }

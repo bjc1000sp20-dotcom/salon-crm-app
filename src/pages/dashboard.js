@@ -3,6 +3,7 @@ import { listLowRemainingPackages, listExpiringPackages } from '../lib/packages.
 import { listClientsWithMeta } from '../lib/clientDirectory.js';
 import {
   listTodayAppointments,
+  listTodayCreatedAppointments,
   listTodayFollowUps,
   listRecentLineContacts,
   countClientsWithoutLine,
@@ -13,6 +14,7 @@ import { tabBarHtml, bindTabBar } from '../components/tabBar.js';
 import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openQuickAppointmentModal } from '../components/quickAppointmentModal.js';
+import { openAppointmentDetailModal } from '../components/appointmentDetailModal.js';
 import { listTodayAndOverdueLeadFollowUps, completeLeadFollowUp, snoozeLeadFollowUp, buildInstagramUrl } from '../lib/leads.js';
 import { openLeadFollowUpModal } from '../components/leadFollowUpModal.js';
 import { openLeadDetailModal } from '../components/leadDetailModal.js';
@@ -51,6 +53,7 @@ async function loadContent(app) {
   try {
     const [
       todayAppointments,
+      todayCreatedAppointments,
       todayFollowUps,
       repurchases,
       lowPackages,
@@ -66,6 +69,7 @@ async function loadContent(app) {
       leadFollowUps,
     ] = await Promise.all([
       listTodayAppointments(salonId),
+      listTodayCreatedAppointments(salonId),
       listTodayFollowUps(salonId),
       listUpcomingRepurchases(salonId),
       listLowRemainingPackages(salonId),
@@ -85,6 +89,7 @@ async function loadContent(app) {
     );
     data = {
       todayAppointments,
+      todayCreatedAppointments,
       todayFollowUps,
       repurchases,
       lowPackages,
@@ -108,13 +113,14 @@ async function loadContent(app) {
   content.innerHTML = `
     ${todoCountsHtml(data)}
     ${quickActionsHtml()}
+    ${todayCreatedAppointmentsHtml(app, data.todayCreatedAppointments)}
     ${todayAppointmentsHtml(app, data.todayAppointments)}
     ${contactTodayHtml(app, data)}
     ${monthSummaryHtml(app, data.summary, data.analytics)}
     ${recentActivityHtml(app, data.recentVisits, data.recentLineContacts)}
   `;
 
-  bindEvents(app, content);
+  bindEvents(app, content, data);
 }
 
 function todoCountsHtml(d) {
@@ -165,6 +171,47 @@ function quickActionsHtml() {
       <button class="secondary-btn" id="dash-add-lead-btn" style="margin-top:0;">＋提醒追蹤客戶</button>
     </div>
   `;
+}
+
+function todayCreatedAppointmentsHtml(app, appointments) {
+  return `
+    <div class="section-label">今日已建立預約</div>
+    <div class="analytics-block">
+      ${
+        appointments.length
+          ? appointments.map((a) => todayCreatedAppointmentRowHtml(a)).join('')
+          : `<div class="empty-body">今天尚未建立預約</div>`
+      }
+    </div>
+  `;
+}
+
+function todayCreatedAppointmentRowHtml(a) {
+  const client = a.clients || {};
+  const hasReminder = (a.follow_ups || []).some((f) => f.kind === 'appointment_reminder');
+  const timeLabel = a.appointment_time ? a.appointment_time.slice(0, 5) : '時間未定';
+  const createdLabel = formatTime(a.created_at);
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;">
+      <div class="card-name">${escapeHtml(a.appointment_date)} ${timeLabel}・${escapeHtml(client.name || '未知客戶')}</div>
+      <div class="card-sub">${escapeHtml(a.service_note || '(未填寫項目)')}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        <span class="tag" style="background:${client.line_user_id ? '#E7EFE4' : '#F0EADA'};color:${client.line_user_id ? '#4E8B5C' : '#9B8F7F'};">${client.line_user_id ? 'LINE 已綁定 ✓' : 'LINE 未綁定'}</span>
+        ${hasReminder ? `<span class="tag" style="background:#E7EFE4;color:#4E8B5C;">預約提醒 ✓</span>` : ''}
+      </div>
+      <div class="field-hint" style="margin-top:6px;">建立於:${createdLabel}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        <button type="button" class="tag dash-appt-view-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
+        <button type="button" class="tag dash-appt-edit-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+      </div>
+    </div>
+  `;
+}
+
+function formatTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function todayAppointmentsHtml(app, appointments) {
@@ -333,7 +380,22 @@ function recentActivityHtml(app, recentVisits, recentLineContacts) {
   `;
 }
 
-function bindEvents(app, content) {
+function bindEvents(app, content, data) {
+  content.querySelectorAll('.dash-appt-view-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const appt = data.todayCreatedAppointments.find((a) => a.id === btn.dataset.id);
+      if (!appt) return;
+      openAppointmentDetailModal(app, appt, () => openEditAppointment(app, appt));
+    };
+  });
+  content.querySelectorAll('.dash-appt-edit-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const appt = data.todayCreatedAppointments.find((a) => a.id === btn.dataset.id);
+      if (!appt) return;
+      openEditAppointment(app, appt);
+    };
+  });
+
   content.querySelectorAll('.dash-client-row').forEach((row) => {
     row.onclick = () => {
       if (row.dataset.clientId) app.navigate('clientDetail', { clientId: row.dataset.clientId });
@@ -403,6 +465,19 @@ function bindEvents(app, content) {
         alert('操作失敗:' + err.message);
       }
     };
+  });
+}
+
+function openEditAppointment(app, appt) {
+  const client = appt.clients || {};
+  openQuickAppointmentModal(app, () => loadContent(app), {
+    client_id: client.id,
+    appointment_id: appt.id,
+    name: client.name || '',
+    phone: client.phone || '',
+    appointment_date: appt.appointment_date,
+    appointment_time: appt.appointment_time,
+    service_note: appt.service_note,
   });
 }
 

@@ -268,6 +268,24 @@ export async function listTodayAppointments(salonId) {
   return data;
 }
 
+// 首頁「今日已建立預約」用:依 created_at 判斷「今天」,跟 listTodayAppointments 依 appointment_date
+// 判斷「今天要來的客人」是完全不同的兩個概念,不能共用同一個查詢。用瀏覽器當地時間(店主平常就在台灣操作)
+// 算出今天的起訖時間再轉 ISO 給 Postgres,才能正確比對 created_at 這個 timestamptz 欄位。
+export async function listTodayCreatedAppointments(salonId) {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('*, clients(id, name, phone, line_user_id), follow_ups(id, kind)')
+    .eq('salon_id', salonId)
+    .gte('created_at', startOfDay.toISOString())
+    .lt('created_at', endOfDay.toISOString())
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
 export async function listAppointmentsForClient(clientId) {
   const { data, error } = await supabase
     .from('appointments')

@@ -3,6 +3,7 @@ import { createAppointmentWithReminders, updateAppointment, addDaysToToday } fro
 import { serviceGridHtml, bindServiceGrid } from './serviceMultiSelect.js';
 import { SERVICES } from '../lib/services.js';
 import { openAppointmentConfirmCopyModal } from './appointmentConfirmCopy.js';
+import { showToast } from './toast.js';
 
 // 首頁「＋新增預約」快速建立:姓名/電話/日期/時間/服務項目,一次建立新客戶+新預約,不比對是否已有相同電話的客戶
 // editTarget 有傳的話代表是從「複製預約資訊」彈窗按【返回編輯】回來,改的是同一筆預約(client_id/appointment_id),不會多建立一筆
@@ -89,6 +90,7 @@ export function openQuickAppointmentModal(app, onDone, editTarget) {
         appointmentId = appt.id;
       }
       overlay.remove();
+      showToast(isEdit ? '預約已更新 ✓' : '預約已成功建立 ✓');
       openConfirmStep(
         app,
         { client_id: clientId, appointment_id: appointmentId, name, phone, appointment_date, appointment_time, service_note },

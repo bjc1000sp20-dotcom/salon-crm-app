@@ -35,6 +35,12 @@ export async function listMessageTemplates(salonId) {
   return data;
 }
 
+// 客戶資料卡的話術下拉選單用:只給啟用中的,停用的話術不再出現在可選清單裡
+export async function listEnabledMessageTemplates(salonId) {
+  const all = await listMessageTemplates(salonId);
+  return all.filter((t) => t.enabled !== false);
+}
+
 // 第一次使用時幫這家店建立一批常用範例,之後都可以自己新增/編輯/刪除
 export async function ensureDefaultMessageTemplates(salonId) {
   const existing = await listMessageTemplates(salonId);

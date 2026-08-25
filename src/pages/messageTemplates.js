@@ -76,6 +76,13 @@ async function loadList(app) {
       await loadList(app);
     };
   });
+  listEl.querySelectorAll('.mt-toggle-btn').forEach((btn) => {
+    btn.onclick = async () => {
+      const t = templates.find((x) => x.id === btn.dataset.id);
+      await updateMessageTemplate(t.id, { enabled: t.enabled === false });
+      await loadList(app);
+    };
+  });
   listEl.querySelectorAll('.mt-delete-btn').forEach((btn) => {
     btn.onclick = async () => {
       if (!confirm('確定要刪除這則話術嗎?')) return;
@@ -88,11 +95,12 @@ async function loadList(app) {
 function templateRowHtml(t) {
   const preview = t.message.length > 40 ? t.message.slice(0, 40) + '…' : t.message;
   const lastModified = (t.updated_at || t.created_at || '').slice(0, 10);
+  const enabled = t.enabled !== false;
   return `
-    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;">
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;opacity:${enabled ? 1 : 0.55};">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;">
         <div>
-          <div class="card-name">${t.is_favorite ? '⭐ ' : ''}${escapeHtml(t.name)}</div>
+          <div class="card-name">${t.is_favorite ? '⭐ ' : ''}${escapeHtml(t.name)}${enabled ? '' : '(已停用)'}</div>
           <div class="card-sub">${escapeHtml(t.category)}</div>
         </div>
         <button type="button" class="btn-ghost mt-star-btn" data-id="${t.id}" style="font-size:18px;padding:4px 8px;">${t.is_favorite ? '★' : '☆'}</button>
@@ -102,6 +110,7 @@ function templateRowHtml(t) {
       <div class="visit-tags">
         <button type="button" class="tag mt-edit-btn" data-id="${t.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
         <button type="button" class="tag mt-dup-btn" data-id="${t.id}" style="cursor:pointer;border:none;background:#EDE7F5;">複製</button>
+        <button type="button" class="tag mt-toggle-btn" data-id="${t.id}" style="cursor:pointer;border:none;background:${enabled ? '#F5E3DC' : '#E7EFE4'};color:${enabled ? '#B5533C' : '#4E8B5C'};">${enabled ? '停用' : '啟用'}</button>
         <button type="button" class="tag mt-delete-btn" data-id="${t.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">刪除</button>
       </div>
     </div>

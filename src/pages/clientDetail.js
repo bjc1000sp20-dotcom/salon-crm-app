@@ -628,8 +628,11 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
     container.innerHTML = `<div class="analytics-block">LINE 資訊讀取失敗:${escapeHtml(err.message)}</div>`;
     return;
   }
+  messageTemplates = messageTemplates.filter((t) => t.enabled !== false);
 
   let customRows = [];
+  let sharedTemplateChoice = '';
+  let sharedTemplateMessage = '';
 
   function thisYearBirthdayFollowUp() {
     const year = new Date().getFullYear();
@@ -669,7 +672,9 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
         messageTemplates,
         lineContact,
         thisYearBirthdayFollowUp(),
-        currentBirthdayError
+        currentBirthdayError,
+        sharedTemplateChoice,
+        sharedTemplateMessage
       ) + timelineSectionHtml(timelineEvents);
     bindEvents(currentBirthdayError);
   }
@@ -813,6 +818,28 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
       };
     }
 
+    const sharedTemplateSelect = document.getElementById('shared-template-select');
+    if (sharedTemplateSelect) {
+      sharedTemplateSelect.onchange = () => {
+        sharedTemplateChoice = sharedTemplateSelect.value;
+        if (sharedTemplateChoice === '') {
+          sharedTemplateMessage = '';
+        } else if (sharedTemplateChoice === '__custom__') {
+          sharedTemplateMessage = '';
+        } else {
+          const template = messageTemplates.find((t) => t.id === sharedTemplateChoice);
+          sharedTemplateMessage = template ? renderMessageVars(template.message, buildMessageContext()) : '';
+        }
+        render();
+      };
+    }
+    const sharedTemplateTextarea = document.getElementById('shared-template-message');
+    if (sharedTemplateTextarea) {
+      sharedTemplateTextarea.oninput = () => {
+        sharedTemplateMessage = sharedTemplateTextarea.value;
+      };
+    }
+
     const addCustomBtn = document.getElementById('add-custom-followup-btn');
     if (addCustomBtn) {
       addCustomBtn.onclick = () => {
@@ -866,7 +893,7 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
             await createFollowUp(app.salon.id, client.id, app.session.user.id, {
               template_id: el.dataset.templateId,
               label: el.dataset.label,
-              message: el.dataset.message,
+              message: sharedTemplateMessage.trim() || el.dataset.message,
               scheduled_at: addDaysToToday(el.dataset.days),
             });
           }
@@ -880,6 +907,8 @@ async function loadLineSection(app, client, { visits, notes, packages, productSa
           }
           followUps = await listFollowUpsForClient(client.id);
           customRows = [];
+          sharedTemplateChoice = '';
+          sharedTemplateMessage = '';
           render();
         } catch (err) {
           console.error(err);
@@ -1121,7 +1150,19 @@ function openBirthdayHistoryModal(client, followUps) {
   };
 }
 
-function lineSectionHtml(client, templates, followUps, customRows, appointments, messageTemplates, lineContact, thisYearBirthdayFollowUp, birthdayCheckboxError) {
+function lineSectionHtml(
+  client,
+  templates,
+  followUps,
+  customRows,
+  appointments,
+  messageTemplates,
+  lineContact,
+  thisYearBirthdayFollowUp,
+  birthdayCheckboxError,
+  sharedTemplateChoice,
+  sharedTemplateMessage
+) {
   return `
     <div class="analytics-block">
       <div class="analytics-title">LINE</div>
@@ -1172,6 +1213,24 @@ function lineSectionHtml(client, templates, followUps, customRows, appointments,
         </label>`
         )
         .join('')}
+      <div class="field" style="margin-top:10px;border-top:1px dashed #E5DCC8;padding-top:10px;">
+        <div class="field-label">選擇 LINE 話術(選填,套用到上面已勾選的固定追蹤項目)</div>
+        <select id="shared-template-select">
+          <option value="" ${sharedTemplateChoice === '' ? 'selected' : ''}>不套用,維持原本訊息</option>
+          <option value="__custom__" ${sharedTemplateChoice === '__custom__' ? 'selected' : ''}>✏️ 自訂訊息</option>
+          ${messageTemplates
+            .map(
+              (t) =>
+                `<option value="${t.id}" ${sharedTemplateChoice === t.id ? 'selected' : ''}>${t.is_favorite ? '⭐ ' : ''}${escapeHtml(t.category)} - ${escapeHtml(t.name)}</option>`
+            )
+            .join('')}
+        </select>
+        ${
+          sharedTemplateChoice
+            ? `<textarea id="shared-template-message" placeholder="訊息內容" style="margin-top:6px;">${escapeHtml(sharedTemplateMessage)}</textarea>`
+            : ''
+        }
+      </div>
       <div id="custom-followup-rows">
         ${customRows
           .map(

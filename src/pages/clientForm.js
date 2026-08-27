@@ -17,6 +17,46 @@ function yesNoHtml(name, label, value) {
   `;
 }
 
+// iPad Safari 對 <input type="date"> 的原生日期選擇器實測仍然選不到「日」,
+// 所以生日改用年/月/日三個獨立下拉選單,存檔時再合併成 YYYY-MM-DD,不依賴任何瀏覽器原生日期元件。
+function parseBirthDate(str) {
+  if (!str) return { year: '', month: '', day: '' };
+  const [y, m, d] = str.split('-');
+  return { year: y || '', month: m || '', day: d || '' };
+}
+
+function daysInMonth(year, month) {
+  if (!year || !month) return 31;
+  return new Date(Number(year), Number(month), 0).getDate();
+}
+
+function birthYearOptionsHtml(selected) {
+  const currentYear = new Date().getFullYear();
+  let options = '<option value="">年</option>';
+  for (let y = currentYear; y >= currentYear - 100; y--) {
+    options += `<option value="${y}" ${String(y) === selected ? 'selected' : ''}>${y}</option>`;
+  }
+  return options;
+}
+
+function birthMonthOptionsHtml(selected) {
+  let options = '<option value="">月</option>';
+  for (let m = 1; m <= 12; m++) {
+    const v = String(m).padStart(2, '0');
+    options += `<option value="${v}" ${v === selected ? 'selected' : ''}>${v}</option>`;
+  }
+  return options;
+}
+
+function birthDayOptionsHtml(maxDay, selected) {
+  let options = '<option value="">日</option>';
+  for (let d = 1; d <= maxDay; d++) {
+    const v = String(d).padStart(2, '0');
+    options += `<option value="${v}" ${v === selected ? 'selected' : ''}>${v}</option>`;
+  }
+  return options;
+}
+
 function multiSelectHtml(name, options, selected) {
   const sel = selected || [];
   return `
@@ -66,7 +106,11 @@ export async function renderClientForm(app) {
         </div>
         <div class="field">
           <div class="field-label">生日</div>
-          <input type="date" id="f-birth" value="${client?.birth_date || ''}" />
+          <div style="display:flex;gap:8px;">
+            <select id="f-birth-year" style="flex:1;">${birthYearOptionsHtml(parseBirthDate(client?.birth_date).year)}</select>
+            <select id="f-birth-month" style="flex:1;">${birthMonthOptionsHtml(parseBirthDate(client?.birth_date).month)}</select>
+            <select id="f-birth-day" style="flex:1;">${birthDayOptionsHtml(31, parseBirthDate(client?.birth_date).day)}</select>
+          </div>
           <div class="field-hint">生日提醒開關移到客戶詳情頁的「LINE 自動追蹤」區塊設定。</div>
         </div>
         <div class="field">
@@ -162,6 +206,25 @@ export async function renderClientForm(app) {
   document.getElementById('back-btn').onclick = () =>
     isEdit ? app.navigate('clientDetail', { clientId: client.id }) : app.navigate('clientList');
   bindHomeButton(app);
+
+  const birthYearSelect = document.getElementById('f-birth-year');
+  const birthMonthSelect = document.getElementById('f-birth-month');
+  const birthDaySelect = document.getElementById('f-birth-day');
+  function refreshBirthDayOptions() {
+    const currentDay = birthDaySelect.value;
+    const maxDay = daysInMonth(birthYearSelect.value, birthMonthSelect.value);
+    birthDaySelect.innerHTML = birthDayOptionsHtml(maxDay, Number(currentDay) <= maxDay ? currentDay : '');
+  }
+  birthYearSelect.onchange = refreshBirthDayOptions;
+  birthMonthSelect.onchange = refreshBirthDayOptions;
+  refreshBirthDayOptions();
+
+  function buildBirthDate() {
+    const y = birthYearSelect.value;
+    const m = birthMonthSelect.value;
+    const d = birthDaySelect.value;
+    return y && m && d ? `${y}-${m}-${d}` : null;
+  }
 
   let gender = client?.gender || '';
   document.querySelectorAll('.gender-chip').forEach((chip) => {
@@ -300,7 +363,7 @@ export async function renderClientForm(app) {
       phone: document.getElementById('f-phone').value.trim(),
       address: document.getElementById('f-address').value.trim(),
       gender,
-      birth_date: document.getElementById('f-birth').value || null,
+      birth_date: buildBirthDate(),
       source: source || null,
       source_detail: document.getElementById('f-source-detail').value.trim(),
       history_treatment: yesNoAnswers.history_treatment,

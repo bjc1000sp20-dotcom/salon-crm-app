@@ -52,10 +52,6 @@ export async function renderClientForm(app) {
           <input type="tel" id="f-phone" value="${escapeAttr(client?.phone)}" placeholder="09xx-xxx-xxx" />
         </div>
         <div class="field">
-          <div class="field-label">LINE ID</div>
-          <input type="text" id="f-line" value="${escapeAttr(client?.line_id)}" placeholder="LINE ID" />
-        </div>
-        <div class="field">
           <div class="field-label">地址</div>
           <input type="text" id="f-address" value="${escapeAttr(client?.address)}" placeholder="通訊地址" />
         </div>
@@ -302,7 +298,6 @@ export async function renderClientForm(app) {
     const fields = {
       name,
       phone: document.getElementById('f-phone').value.trim(),
-      line_id: document.getElementById('f-line').value.trim(),
       address: document.getElementById('f-address').value.trim(),
       gender,
       birth_date: document.getElementById('f-birth').value || null,

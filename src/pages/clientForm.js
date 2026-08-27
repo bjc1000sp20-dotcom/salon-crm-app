@@ -3,6 +3,8 @@ import { signaturePadHtml, setupSignaturePad } from '../components/signaturePad.
 import { SOURCES } from '../lib/sources.js';
 import { SKINCARE_TYPES, SKIN_CONCERNS, SKIN_TYPES } from '../lib/intakeOptions.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
+import { computeClientSectionOrder } from '../lib/clientSectionOrder.js';
+import { renderClientSectionReorderMode } from '../components/clientSectionReorderMode.js';
 
 // 是/否 兩顆 chip 的固定樣式,name 是欄位名稱(用來做 id/data 屬性)
 function yesNoHtml(name, label, value) {
@@ -71,9 +73,172 @@ function multiSelectHtml(name, options, selected) {
   `;
 }
 
+// ---------------- 各可排序欄位/區塊的內容(順序由 computeClientSectionOrder 決定,內容本身不受排序影響) ----------------
+
+function basicNameFieldHtml(client) {
+  return `
+    <div class="field">
+      <div class="field-label">姓名<span class="req"> *</span></div>
+      <input type="text" id="f-name" value="${escapeAttr(client?.name)}" placeholder="客戶姓名" />
+    </div>
+  `;
+}
+
+function basicPhoneFieldHtml(client) {
+  return `
+    <div class="field">
+      <div class="field-label">電話</div>
+      <input type="tel" id="f-phone" value="${escapeAttr(client?.phone)}" placeholder="09xx-xxx-xxx" />
+    </div>
+  `;
+}
+
+function basicBirthdayFieldHtml(client) {
+  const parsed = parseBirthDate(client?.birth_date);
+  return `
+    <div class="field">
+      <div class="field-label">生日</div>
+      <div style="display:flex;gap:8px;">
+        <select id="f-birth-year" style="flex:1;">${birthYearOptionsHtml(parsed.year)}</select>
+        <select id="f-birth-month" style="flex:1;">${birthMonthOptionsHtml(parsed.month)}</select>
+        <select id="f-birth-day" style="flex:1;">${birthDayOptionsHtml(31, parsed.day)}</select>
+      </div>
+      <div class="field-hint">生日提醒開關移到客戶詳情頁的「LINE 自動追蹤」區塊設定。</div>
+    </div>
+  `;
+}
+
+function basicAddressFieldHtml(client) {
+  return `
+    <div class="field">
+      <div class="field-label">地址</div>
+      <input type="text" id="f-address" value="${escapeAttr(client?.address)}" placeholder="通訊地址" />
+    </div>
+  `;
+}
+
+function basicGenderFieldHtml(client) {
+  return `
+    <div class="row-2">
+      <div class="field">
+        <div class="field-label">性別</div>
+        <div class="service-grid">
+          <button type="button" class="service-chip gender-chip${client?.gender === 'F' ? ' on' : ''}" data-g="F" style="${client?.gender === 'F' ? 'background:#B8886B;' : ''}">女</button>
+          <button type="button" class="service-chip gender-chip${client?.gender === 'M' ? ' on' : ''}" data-g="M" style="${client?.gender === 'M' ? 'background:#8B7D9B;' : ''}">男</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function basicSourceFieldHtml(client) {
+  return `
+    <div class="field">
+      <div class="field-label">客戶來源</div>
+      <div class="service-grid">
+        ${SOURCES.map(
+          (s) => `<button type="button" class="service-chip source-chip${client?.source === s.id ? ' on' : ''}" data-s="${s.id}" style="${client?.source === s.id ? `background:${s.color};` : ''}">${s.name}</button>`
+        ).join('')}
+      </div>
+    </div>
+    <div class="field">
+      <div class="field-label">來源詳細(介紹人姓名 / 平台名稱)</div>
+      <input type="text" id="f-source-detail" value="${escapeAttr(client?.source_detail)}" placeholder="例如:王小姐介紹、Instagram 廣告" />
+    </div>
+  `;
+}
+
+function questionnaireFieldHtml(client) {
+  return `
+    <div class="section-label" style="margin-top:10px;">基本狀況問卷</div>
+    ${yesNoHtml('history_treatment', '是否曾經有用藥、擦酸類、整形手術、雷射、任何其他皮膚課程')}
+    ${yesNoHtml('history_supplement', '是否有額外補充營養食品')}
+    <div class="field">
+      <div class="field-label">營養食品品牌(選填)</div>
+      <input type="text" id="f-supplement-brand" value="${escapeAttr(client?.history_supplement_brand)}" placeholder="品牌" />
+    </div>
+    ${yesNoHtml('history_allergy', '是否曾經有肌膚過敏史')}
+    ${yesNoHtml('makeup_habit', '平時是否有化妝習慣')}
+    ${yesNoHtml('uses_skincare', '平時是否有使用保養品')}
+    <div class="field">
+      <div class="field-label">保養品品牌(選填)</div>
+      <input type="text" id="f-skincare-brand" value="${escapeAttr(client?.skincare_brand)}" placeholder="品牌" />
+    </div>
+    <div class="field">
+      <div class="field-label">目前使用保養品類型(可複選)</div>
+      ${multiSelectHtml('skincare_types', SKINCARE_TYPES, client?.skincare_types)}
+    </div>
+    <div class="field">
+      <div class="field-label">日常一天喝水量</div>
+      <input type="text" id="f-water" value="${escapeAttr(client?.daily_water_intake)}" placeholder="例如:1500ml" />
+    </div>
+    <div class="field">
+      <div class="field-label">最想解決的肌膚問題(可複選)</div>
+      ${multiSelectHtml('skin_concerns', SKIN_CONCERNS, client?.skin_concerns)}
+    </div>
+  `;
+}
+
+function skinTypeStaffFieldHtml(client) {
+  return `
+    <div class="section-label" style="margin-top:10px;">以下由美容師填寫</div>
+    <div class="field">
+      <div class="field-label">皮膚類型</div>
+      <div class="service-grid">
+        ${SKIN_TYPES.map(
+          (t) => `<button type="button" class="service-chip skin-type-chip${client?.skin_type === t.id ? ' on' : ''}" data-t="${t.id}" style="${client?.skin_type === t.id ? 'background:#3A332B;' : ''}">${t.name}</button>`
+        ).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// 簽名整合成一份:新增客戶時只簽一次,同一份簽名同時套用到「客戶簽名」與「同意書簽名」兩個既有欄位,
+// 不會因為不同區塊要求客人重複簽名。編輯模式維持顯示既有簽名的靜態圖片,不用重簽。
+function signatureFieldHtml(isEdit, client, app) {
+  if (!isEdit) {
+    return `
+      <div class="section-label" style="margin-top:10px;">同意書與簽名</div>
+      <div class="field-hint" style="margin-bottom:10px;">客戶第一次到店建卡,請在此一併確認同意書內容。</div>
+      <div class="note-box" style="margin-bottom:16px;">${escapeHtml(app.salon.consent_template)}</div>
+      <div class="field">
+        <div class="field-label">本人授權此店家可拍攝前後對比照或影片紀錄及宣傳</div>
+        <div class="service-grid">
+          <button type="button" class="service-chip photo-consent-chip" data-v="true">是</button>
+          <button type="button" class="service-chip photo-consent-chip" data-v="false">否</button>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">簽名<span class="req"> *</span></div>
+        ${signaturePadHtml('sig-pad')}
+      </div>
+    `;
+  }
+  return client?.signature_url
+    ? `
+    <div class="field">
+      <div class="field-label">客戶簽名</div>
+      <img class="sig-static-img" id="sig-static-img" alt="簽名" />
+    </div>`
+    : '';
+}
+
 export async function renderClientForm(app) {
   const isEdit = app.params.mode === 'edit';
   const client = isEdit ? await getClient(app.params.clientId) : null;
+
+  const sectionOrder = computeClientSectionOrder(app);
+  const sectionHtml = {
+    basicName: basicNameFieldHtml(client),
+    basicPhone: basicPhoneFieldHtml(client),
+    basicBirthday: basicBirthdayFieldHtml(client),
+    basicAddress: basicAddressFieldHtml(client),
+    basicGender: basicGenderFieldHtml(client),
+    basicSource: basicSourceFieldHtml(client),
+    questionnaire: questionnaireFieldHtml(client),
+    skinTypeStaff: skinTypeStaffFieldHtml(client),
+    signature: signatureFieldHtml(isEdit, client, app),
+  };
 
   app.root.innerHTML = `
     <div class="screen">
@@ -83,119 +248,9 @@ export async function renderClientForm(app) {
         ${homeButtonHtml()}
       </div>
       <div class="form-scroll">
-        <div class="field">
-          <div class="field-label">姓名<span class="req"> *</span></div>
-          <input type="text" id="f-name" value="${escapeAttr(client?.name)}" placeholder="客戶姓名" />
-        </div>
-        <div class="field">
-          <div class="field-label">電話</div>
-          <input type="tel" id="f-phone" value="${escapeAttr(client?.phone)}" placeholder="09xx-xxx-xxx" />
-        </div>
-        <div class="field">
-          <div class="field-label">地址</div>
-          <input type="text" id="f-address" value="${escapeAttr(client?.address)}" placeholder="通訊地址" />
-        </div>
-        <div class="row-2">
-          <div class="field">
-            <div class="field-label">性別</div>
-            <div class="service-grid">
-              <button type="button" class="service-chip gender-chip${client?.gender === 'F' ? ' on' : ''}" data-g="F" style="${client?.gender === 'F' ? 'background:#B8886B;' : ''}">女</button>
-              <button type="button" class="service-chip gender-chip${client?.gender === 'M' ? ' on' : ''}" data-g="M" style="${client?.gender === 'M' ? 'background:#8B7D9B;' : ''}">男</button>
-            </div>
-          </div>
-        </div>
-        <div class="field">
-          <div class="field-label">生日</div>
-          <div style="display:flex;gap:8px;">
-            <select id="f-birth-year" style="flex:1;">${birthYearOptionsHtml(parseBirthDate(client?.birth_date).year)}</select>
-            <select id="f-birth-month" style="flex:1;">${birthMonthOptionsHtml(parseBirthDate(client?.birth_date).month)}</select>
-            <select id="f-birth-day" style="flex:1;">${birthDayOptionsHtml(31, parseBirthDate(client?.birth_date).day)}</select>
-          </div>
-          <div class="field-hint">生日提醒開關移到客戶詳情頁的「LINE 自動追蹤」區塊設定。</div>
-        </div>
-        <div class="field">
-          <div class="field-label">客戶來源</div>
-          <div class="service-grid">
-            ${SOURCES.map(
-              (s) => `<button type="button" class="service-chip source-chip${client?.source === s.id ? ' on' : ''}" data-s="${s.id}" style="${client?.source === s.id ? `background:${s.color};` : ''}">${s.name}</button>`
-            ).join('')}
-          </div>
-        </div>
-        <div class="field">
-          <div class="field-label">來源詳細(介紹人姓名 / 平台名稱)</div>
-          <input type="text" id="f-source-detail" value="${escapeAttr(client?.source_detail)}" placeholder="例如:王小姐介紹、Instagram 廣告" />
-        </div>
+        <button type="button" class="secondary-btn" id="cf-open-reorder-btn" style="margin-top:0;margin-bottom:6px;">調整欄位順序</button>
 
-        <div class="section-label" style="margin-top:10px;">基本狀況問卷</div>
-
-        ${yesNoHtml('history_treatment', '是否曾經有用藥、擦酸類、整形手術、雷射、任何其他皮膚課程')}
-        ${yesNoHtml('history_supplement', '是否有額外補充營養食品')}
-        <div class="field">
-          <div class="field-label">營養食品品牌(選填)</div>
-          <input type="text" id="f-supplement-brand" value="${escapeAttr(client?.history_supplement_brand)}" placeholder="品牌" />
-        </div>
-        ${yesNoHtml('history_allergy', '是否曾經有肌膚過敏史')}
-        ${yesNoHtml('makeup_habit', '平時是否有化妝習慣')}
-        ${yesNoHtml('uses_skincare', '平時是否有使用保養品')}
-        <div class="field">
-          <div class="field-label">保養品品牌(選填)</div>
-          <input type="text" id="f-skincare-brand" value="${escapeAttr(client?.skincare_brand)}" placeholder="品牌" />
-        </div>
-        <div class="field">
-          <div class="field-label">目前使用保養品類型(可複選)</div>
-          ${multiSelectHtml('skincare_types', SKINCARE_TYPES, client?.skincare_types)}
-        </div>
-        <div class="field">
-          <div class="field-label">日常一天喝水量</div>
-          <input type="text" id="f-water" value="${escapeAttr(client?.daily_water_intake)}" placeholder="例如:1500ml" />
-        </div>
-        <div class="field">
-          <div class="field-label">最想解決的肌膚問題(可複選)</div>
-          ${multiSelectHtml('skin_concerns', SKIN_CONCERNS, client?.skin_concerns)}
-        </div>
-
-        <div class="section-label" style="margin-top:10px;">以下由美容師填寫</div>
-        <div class="field">
-          <div class="field-label">皮膚類型</div>
-          <div class="service-grid">
-            ${SKIN_TYPES.map(
-              (t) => `<button type="button" class="service-chip skin-type-chip${client?.skin_type === t.id ? ' on' : ''}" data-t="${t.id}" style="${client?.skin_type === t.id ? 'background:#3A332B;' : ''}">${t.name}</button>`
-            ).join('')}
-          </div>
-        </div>
-
-        ${
-          !isEdit
-            ? `
-        <div class="field">
-          <div class="field-label">客戶簽名(僅首次建卡簽一次)</div>
-          ${signaturePadHtml('client-sig')}
-        </div>
-
-        <div class="section-label" style="margin-top:10px;">課程前同意書</div>
-        <div class="field-hint" style="margin-bottom:10px;">客戶第一次到店建卡,請在此一併確認同意書內容。</div>
-        <div class="note-box" style="margin-bottom:16px;">${escapeHtml(app.salon.consent_template)}</div>
-
-        <div class="field">
-          <div class="field-label">本人授權此店家可拍攝前後對比照或影片紀錄及宣傳</div>
-          <div class="service-grid">
-            <button type="button" class="service-chip photo-consent-chip" data-v="true">是</button>
-            <button type="button" class="service-chip photo-consent-chip" data-v="false">否</button>
-          </div>
-        </div>
-
-        <div class="field">
-          <div class="field-label">同意書簽名<span class="req"> *</span></div>
-          ${signaturePadHtml('consent-sig')}
-        </div>`
-            : client?.signature_url
-              ? `
-        <div class="field">
-          <div class="field-label">客戶簽名</div>
-          <img class="sig-static-img" id="sig-static-img" alt="簽名" />
-        </div>`
-              : ''
-        }
+        ${sectionOrder.map((key) => sectionHtml[key] || '').join('')}
       </div>
       <div class="form-footer">
         <button class="primary-btn" id="save-btn">${isEdit ? '儲存變更' : '建立客戶卡'}</button>
@@ -206,6 +261,8 @@ export async function renderClientForm(app) {
   document.getElementById('back-btn').onclick = () =>
     isEdit ? app.navigate('clientDetail', { clientId: client.id }) : app.navigate('clientList');
   bindHomeButton(app);
+  document.getElementById('cf-open-reorder-btn').onclick = () =>
+    renderClientSectionReorderMode(app, { returnTo: { view: 'clientForm', params: app.params } });
 
   const birthYearSelect = document.getElementById('f-birth-year');
   const birthMonthSelect = document.getElementById('f-birth-month');
@@ -326,11 +383,9 @@ export async function renderClientForm(app) {
   });
 
   let sigPad = null;
-  let consentSigPad = null;
   let photoConsent = null;
   if (!isEdit) {
-    sigPad = setupSignaturePad('client-sig');
-    consentSigPad = setupSignaturePad('consent-sig');
+    sigPad = setupSignaturePad('sig-pad');
     document.querySelectorAll('.photo-consent-chip').forEach((chip) => {
       chip.onclick = () => {
         photoConsent = chip.dataset.v === 'true';
@@ -386,23 +441,18 @@ export async function renderClientForm(app) {
         await updateClient(client.id, fields);
         app.navigate('clientDetail', { clientId: client.id });
       } else {
-        if (!consentSigPad || !consentSigPad.hasStroke()) {
-          alert('請先完成同意書簽名');
+        if (!sigPad || !sigPad.hasStroke()) {
+          alert('請先完成簽名');
           saveBtn.disabled = false;
           saveBtn.textContent = '建立客戶卡';
           return;
         }
         const created = await createClient(app.salon.id, app.session.user.id, fields);
-        if (sigPad && sigPad.hasStroke()) {
-          const blob = await sigPad.getBlob();
-          if (blob) {
-            const path = await uploadSignature(app.salon.id, created.id, blob);
-            await updateClient(created.id, { signature_url: path });
-          }
-        }
-        const consentBlob = await consentSigPad.getBlob();
-        const consentPath = await uploadConsentSignature(app.salon.id, created.id, consentBlob);
+        const blob = await sigPad.getBlob();
+        const signaturePath = await uploadSignature(app.salon.id, created.id, blob);
+        const consentPath = await uploadConsentSignature(app.salon.id, created.id, blob);
         await updateClient(created.id, {
+          signature_url: signaturePath,
           consent_signature_url: consentPath,
           consent_text_snapshot: app.salon.consent_template,
           consent_signed_at: new Date().toISOString(),

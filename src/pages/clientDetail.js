@@ -6,7 +6,6 @@ import {
   getSignedUrl,
   createTopup,
   updateClient,
-  updateSalon,
 } from '../lib/data.js';
 import { calcAge } from '../lib/calcAge.js';
 import { serviceById } from '../lib/services.js';
@@ -46,46 +45,12 @@ import { sendBirthdayNow, skipBirthdayThisYear } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openAppointmentConfirmCopyModal } from '../components/appointmentConfirmCopy.js';
 import { openClientDeleteModal } from '../components/clientDeleteModal.js';
-
-// 客戶詳情頁區塊的排序註冊表:以後再新增區塊,只要在這裡多加一筆,
-// computeClientDetailSectionOrder 就會自動把它排進「還沒存過順序」的區塊裡,寫法比照 settings.js 的排序系統。
-const CLIENT_DETAIL_SECTION_KEYS = [
-  'preVisitSummary',
-  'signature',
-  'tags',
-  'notes',
-  'intake',
-  'balance',
-  'packages',
-  'productRecommendation',
-  'lineTracking',
-  'archive',
-  'visits',
-];
-const CLIENT_DETAIL_SECTION_TITLES = {
-  preVisitSummary: '服務前摘要',
-  signature: '簽名',
-  tags: '客戶標籤',
-  notes: '客戶備註',
-  intake: '問卷／聯絡資訊',
-  balance: '儲值餘額與快速操作',
-  packages: '療程',
-  productRecommendation: '產品搭配建議',
-  lineTracking: 'LINE(綁定／預約／自動追蹤)',
-  archive: '紙本歷史資料',
-  visits: '到店紀錄',
-};
-
-function computeClientDetailSectionOrder(app) {
-  const saved = Array.isArray(app.salon.client_detail_section_order) ? app.salon.client_detail_section_order : [];
-  const known = saved.filter((k) => CLIENT_DETAIL_SECTION_KEYS.includes(k));
-  const missing = CLIENT_DETAIL_SECTION_KEYS.filter((k) => !known.includes(k));
-  return [...known, ...missing];
-}
+import { computeClientSectionOrder } from '../lib/clientSectionOrder.js';
+import { renderClientSectionReorderMode } from '../components/clientSectionReorderMode.js';
 
 export async function renderClientDetail(app, { reorderMode = false } = {}) {
   if (reorderMode) {
-    renderClientDetailReorderMode(app);
+    renderClientSectionReorderMode(app, { returnTo: { view: 'clientDetail', params: { clientId: app.params.clientId } } });
     return;
   }
   const clientId = app.params.clientId;
@@ -117,7 +82,7 @@ export async function renderClientDetail(app, { reorderMode = false } = {}) {
 
   const signedSigUrl = client.signature_url ? await getSignedUrl('signatures', client.signature_url) : null;
 
-  const sectionOrder = computeClientDetailSectionOrder(app);
+  const sectionOrder = computeClientSectionOrder(app);
   const sectionHtml = {
     preVisitSummary: preVisitSummaryHtml({ visits, packages, productSales, clientTags, notes, lineContact }),
     signature: signedSigUrl
@@ -183,7 +148,7 @@ export async function renderClientDetail(app, { reorderMode = false } = {}) {
 
         <div id="tag-warning-banner">${clientTags.length ? warningBannerHtml(clientTags) : ''}</div>
 
-        <button type="button" class="secondary-btn" id="cd-open-reorder-btn" style="margin-top:0;margin-bottom:6px;">調整版面順序</button>
+        <button type="button" class="secondary-btn" id="cd-open-reorder-btn" style="margin-top:0;margin-bottom:6px;">調整欄位順序</button>
 
         ${sectionOrder.map((key) => sectionHtml[key] || '').join('')}
 
@@ -192,7 +157,8 @@ export async function renderClientDetail(app, { reorderMode = false } = {}) {
     </div>
   `;
 
-  document.getElementById('cd-open-reorder-btn').onclick = () => renderClientDetail(app, { reorderMode: true });
+  document.getElementById('cd-open-reorder-btn').onclick = () =>
+    renderClientSectionReorderMode(app, { returnTo: { view: 'clientDetail', params: { clientId: client.id } } });
   document.getElementById('back-btn').onclick = () => app.navigate('clientList');
   document.getElementById('edit-btn').onclick = () => app.navigate('clientForm', { mode: 'edit', clientId: client.id });
   bindHomeButton(app);
@@ -347,150 +313,6 @@ export async function renderClientDetail(app, { reorderMode = false } = {}) {
   document.getElementById('delete-client-btn').onclick = () => {
     openClientDeleteModal(app, client, () => app.navigate('clientList'));
   };
-}
-
-// ---------------- 客戶詳情頁區塊排序模式(比照 settings.js 的排序系統) ----------------
-
-function renderClientDetailReorderMode(app) {
-  const clientId = app.params.clientId;
-  let workingOrder = computeClientDetailSectionOrder(app);
-
-  function render() {
-    app.root.innerHTML = `
-      <div class="screen">
-        <div class="form-header">
-          <button class="icon-btn" id="cdreorder-cancel-btn">←</button>
-          <div class="form-header-title">調整版面順序</div>
-          <div style="width:38px;"></div>
-        </div>
-        <div class="list-scroll" style="padding-top:16px;">
-          <div class="field-hint" style="margin-bottom:12px;">拖曳 ☰ 或用上下箭頭調整順序,完成後記得按【儲存排序】。這個順序全店共用,新舊客戶都會套用同一份。</div>
-          <div id="cdreorder-list">
-            ${workingOrder.map((key, idx) => clientDetailReorderRowHtml(key, idx, workingOrder.length)).join('')}
-          </div>
-          <button type="button" class="primary-btn" id="cdreorder-save-btn" style="margin-top:16px;">儲存排序</button>
-          <button type="button" class="secondary-btn" id="cdreorder-cancel-btn2">取消</button>
-          <button type="button" class="secondary-btn" id="cdreorder-reset-btn">恢復預設排序</button>
-        </div>
-      </div>
-    `;
-    bind();
-  }
-
-  function bind() {
-    document.getElementById('cdreorder-cancel-btn').onclick = () => app.navigate('clientDetail', { clientId });
-    document.getElementById('cdreorder-cancel-btn2').onclick = () => app.navigate('clientDetail', { clientId });
-
-    document.getElementById('cdreorder-save-btn').onclick = async () => {
-      const saveBtn = document.getElementById('cdreorder-save-btn');
-      saveBtn.disabled = true;
-      saveBtn.textContent = '儲存中...';
-      try {
-        const updated = await updateSalon(app.salon.id, { client_detail_section_order: workingOrder });
-        app.salon = updated;
-        app.navigate('clientDetail', { clientId });
-      } catch (err) {
-        alert('儲存失敗:' + err.message);
-        saveBtn.disabled = false;
-        saveBtn.textContent = '儲存排序';
-      }
-    };
-
-    document.getElementById('cdreorder-reset-btn').onclick = async () => {
-      if (!confirm('確定要恢復客戶詳情頁預設順序嗎?')) return;
-      try {
-        const updated = await updateSalon(app.salon.id, { client_detail_section_order: null });
-        app.salon = updated;
-        app.navigate('clientDetail', { clientId });
-      } catch (err) {
-        alert('操作失敗:' + err.message);
-      }
-    };
-
-    const listEl = document.getElementById('cdreorder-list');
-
-    listEl.querySelectorAll('.cdreorder-up-btn').forEach((btn) => {
-      btn.onclick = () => {
-        const idx = workingOrder.indexOf(btn.dataset.key);
-        if (idx <= 0) return;
-        [workingOrder[idx - 1], workingOrder[idx]] = [workingOrder[idx], workingOrder[idx - 1]];
-        render();
-      };
-    });
-    listEl.querySelectorAll('.cdreorder-down-btn').forEach((btn) => {
-      btn.onclick = () => {
-        const idx = workingOrder.indexOf(btn.dataset.key);
-        if (idx < 0 || idx >= workingOrder.length - 1) return;
-        [workingOrder[idx + 1], workingOrder[idx]] = [workingOrder[idx], workingOrder[idx + 1]];
-        render();
-      };
-    });
-
-    // 電腦滑鼠拖曳:原生 HTML5 drag
-    listEl.querySelectorAll('.cdreorder-row').forEach((row) => {
-      row.ondragstart = (e) => {
-        e.dataTransfer.setData('text/plain', row.dataset.key);
-        row.classList.add('dragging');
-      };
-      row.ondragend = () => row.classList.remove('dragging');
-      row.ondragover = (e) => {
-        e.preventDefault();
-        const draggingEl = listEl.querySelector('.dragging');
-        if (!draggingEl) return;
-        const draggingKey = draggingEl.dataset.key;
-        if (draggingKey === row.dataset.key) return;
-        const fromIdx = workingOrder.indexOf(draggingKey);
-        const toIdx = workingOrder.indexOf(row.dataset.key);
-        if (fromIdx < 0 || toIdx < 0) return;
-        workingOrder.splice(fromIdx, 1);
-        workingOrder.splice(toIdx, 0, draggingKey);
-        render();
-      };
-    });
-
-    // 手機觸控拖曳:只在 ☰ 圖示上監聽,不影響整頁捲動
-    listEl.querySelectorAll('.cdreorder-handle').forEach((handle) => {
-      handle.onpointerdown = (e) => {
-        const row = handle.closest('.cdreorder-row');
-        const draggingKey = row.dataset.key;
-        handle.setPointerCapture(e.pointerId);
-
-        function onMove(ev) {
-          const rows = Array.from(listEl.querySelectorAll('.cdreorder-row'));
-          const hovered = rows.find((r) => {
-            const rect = r.getBoundingClientRect();
-            return ev.clientY >= rect.top && ev.clientY <= rect.bottom;
-          });
-          if (!hovered || hovered.dataset.key === draggingKey) return;
-          const fromIdx = workingOrder.indexOf(draggingKey);
-          const toIdx = workingOrder.indexOf(hovered.dataset.key);
-          if (fromIdx < 0 || toIdx < 0) return;
-          workingOrder.splice(fromIdx, 1);
-          workingOrder.splice(toIdx, 0, draggingKey);
-          render();
-        }
-        function onUp() {
-          document.removeEventListener('pointermove', onMove);
-          document.removeEventListener('pointerup', onUp);
-        }
-        document.addEventListener('pointermove', onMove);
-        document.addEventListener('pointerup', onUp);
-      };
-    });
-  }
-
-  render();
-}
-
-function clientDetailReorderRowHtml(key, idx, total) {
-  return `
-    <div class="card cdreorder-row" draggable="true" data-key="${key}" style="cursor:default;align-items:center;gap:10px;margin-bottom:8px;">
-      <span class="cdreorder-handle" style="touch-action:none;cursor:grab;font-size:20px;color:#9B8F7F;padding:4px;">☰</span>
-      <div style="flex:1;">${escapeHtml(CLIENT_DETAIL_SECTION_TITLES[key] || key)}</div>
-      <button type="button" class="btn-ghost cdreorder-up-btn" data-key="${key}" ${idx === 0 ? 'disabled' : ''} style="padding:4px 10px;">↑</button>
-      <button type="button" class="btn-ghost cdreorder-down-btn" data-key="${key}" ${idx === total - 1 ? 'disabled' : ''} style="padding:4px 10px;">↓</button>
-    </div>
-  `;
 }
 
 function daysBetween(dateStr) {

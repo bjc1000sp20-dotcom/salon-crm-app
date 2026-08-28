@@ -85,9 +85,7 @@ export async function renderClientDetail(app, { reorderMode = false } = {}) {
   const sectionOrder = computeClientSectionOrder(app);
   const sectionHtml = {
     preVisitSummary: preVisitSummaryHtml({ visits, packages, productSales, clientTags, notes, lineContact }),
-    signature: signedSigUrl
-      ? `<div class="field"><div class="field-label">簽名</div><img class="sig-static-img" src="${signedSigUrl}" alt="簽名" /></div>`
-      : '',
+    signature: signatureSummaryHtml(client, signedSigUrl),
     tags: `<div id="tags-section">${tagsSectionHtml(clientTags)}</div>`,
     notes: `<div id="notes-section">${notesSectionHtml(notes)}</div>`,
     intake: intakeSummaryHtml(client),
@@ -372,9 +370,29 @@ function intakeSummaryHtml(c) {
       ${(c.skincare_types || []).length ? `<div class="detail-row">保養品類型:${c.skincare_types.map(escapeHtml).join('、')}</div>` : ''}
       ${c.daily_water_intake ? `<div class="detail-row">日常喝水量:${escapeHtml(c.daily_water_intake)}</div>` : ''}
       ${(c.skin_concerns || []).length ? `<div class="detail-row">想解決的肌膚問題:${c.skin_concerns.map(escapeHtml).join('、')}</div>` : ''}
-      <div class="detail-row">授權拍照/影片宣傳:${yn(c.photo_consent)}</div>
     </div>
   `;
+}
+
+// 簽名 + 拍照授權彙總:兩項拍照同意事項是簽名當下一起確認、一起存檔的,顯示上放在一起,
+// 跟簽名共用同一個排序 key(signature),拖曳排序時會一起移動,不會被拆散。
+function signatureSummaryHtml(client, signedSigUrl) {
+  const consentLabel = (v) => (v === true ? '同意' : v === false ? '不同意' : '尚未填寫');
+  return `
+    <div class="analytics-block">
+      <div class="analytics-title">簽名與拍照授權</div>
+      ${signedSigUrl ? `<img class="sig-static-img" src="${signedSigUrl}" alt="簽名" />` : ''}
+      <div class="detail-row" style="margin-top:${signedSigUrl ? '10px' : '0'};">服務紀錄拍照授權:${consentLabel(client.photo_consent)}</div>
+      <div class="detail-row">照片公開／案例使用:${consentLabel(client.photo_consent_public)}</div>
+      <div class="detail-row">簽名:${client.signature_url ? '已完成' : '尚未簽署'}</div>
+      ${client.consent_signed_at ? `<div class="detail-row">簽署日期:${formatDateOnly(client.consent_signed_at)}</div>` : ''}
+    </div>
+  `;
+}
+
+function formatDateOnly(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 function visitCardHtml(v) {

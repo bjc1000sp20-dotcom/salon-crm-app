@@ -202,20 +202,12 @@ function signatureFieldHtml(isEdit, client, app) {
       <div class="field-hint" style="margin-bottom:10px;">客戶第一次到店建卡,請在此一併確認同意書內容。</div>
       <div class="note-box" style="margin-bottom:16px;">${escapeHtml(app.salon.consent_template)}</div>
 
-      <div class="field-label" style="margin-top:4px;">拍照／影像紀錄授權</div>
-      <div class="field-hint" style="margin-bottom:10px;">本人同意工作室於服務過程中,為紀錄膚況、療程進度、後續追蹤等目的進行拍照或影像紀錄。</div>
       <div class="field">
-        <div class="field-label">服務紀錄拍照</div>
+        <div class="field-label">照片拍攝與公開使用授權</div>
+        <div class="field-hint" style="margin-bottom:10px;">本人同意工作室於服務過程中拍攝照片或影像,並同意將相關照片作為案例紀錄、教學或社群分享使用。</div>
         <div class="service-grid">
-          <button type="button" class="service-chip photo-consent-chip" data-v="true">同意拍攝</button>
-          <button type="button" class="service-chip photo-consent-chip" data-v="false">不同意拍攝</button>
-        </div>
-      </div>
-      <div class="field">
-        <div class="field-label">照片公開／案例使用(案例分享、社群貼文、行銷素材)</div>
-        <div class="service-grid">
-          <button type="button" class="service-chip photo-consent-public-chip" data-v="true">同意</button>
-          <button type="button" class="service-chip photo-consent-public-chip" data-v="false">不同意</button>
+          <button type="button" class="service-chip photo-consent-chip" data-v="true">同意</button>
+          <button type="button" class="service-chip photo-consent-chip" data-v="false">不同意</button>
         </div>
       </div>
 
@@ -395,24 +387,12 @@ export async function renderClientForm(app) {
 
   let sigPad = null;
   let photoConsent = null;
-  let photoConsentPublic = null;
   if (!isEdit) {
     sigPad = setupSignaturePad('sig-pad');
     document.querySelectorAll('.photo-consent-chip').forEach((chip) => {
       chip.onclick = () => {
         photoConsent = chip.dataset.v === 'true';
         document.querySelectorAll('.photo-consent-chip').forEach((c) => {
-          c.classList.remove('on');
-          c.style.background = '';
-        });
-        chip.classList.add('on');
-        chip.style.background = '#3A332B';
-      };
-    });
-    document.querySelectorAll('.photo-consent-public-chip').forEach((chip) => {
-      chip.onclick = () => {
-        photoConsentPublic = chip.dataset.v === 'true';
-        document.querySelectorAll('.photo-consent-public-chip').forEach((c) => {
           c.classList.remove('on');
           c.style.background = '';
         });
@@ -480,7 +460,6 @@ export async function renderClientForm(app) {
           consent_text_snapshot: app.salon.consent_template,
           consent_signed_at: new Date().toISOString(),
           photo_consent: photoConsent,
-          photo_consent_public: photoConsentPublic,
         });
         app.navigate('clientDetail', { clientId: created.id });
       }

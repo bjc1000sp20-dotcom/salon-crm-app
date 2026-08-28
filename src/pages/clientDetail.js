@@ -382,10 +382,10 @@ function signatureSummaryHtml(client, signedSigUrl) {
     <div class="analytics-block">
       <div class="analytics-title">簽名與拍照授權</div>
       ${signedSigUrl ? `<img class="sig-static-img" src="${signedSigUrl}" alt="簽名" />` : ''}
-      <div class="detail-row" style="margin-top:${signedSigUrl ? '10px' : '0'};">服務紀錄拍照授權:${consentLabel(client.photo_consent)}</div>
-      <div class="detail-row">照片公開／案例使用:${consentLabel(client.photo_consent_public)}</div>
+      <div class="detail-row" style="margin-top:${signedSigUrl ? '10px' : '0'};">照片拍攝與公開使用授權:${consentLabel(client.photo_consent)}</div>
       <div class="detail-row">簽名:${client.signature_url ? '已完成' : '尚未簽署'}</div>
       ${client.consent_signed_at ? `<div class="detail-row">簽署日期:${formatDateOnly(client.consent_signed_at)}</div>` : ''}
+      ${client.consent_signed_at ? `<div class="detail-row">簽署時間:${formatTimeOnly(client.consent_signed_at)}</div>` : ''}
     </div>
   `;
 }
@@ -393,6 +393,11 @@ function signatureSummaryHtml(client, signedSigUrl) {
 function formatDateOnly(iso) {
   const d = new Date(iso);
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function formatTimeOnly(iso) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function visitCardHtml(v) {

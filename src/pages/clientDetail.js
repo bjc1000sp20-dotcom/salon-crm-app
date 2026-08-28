@@ -1461,14 +1461,24 @@ function openNoteModal(initialBody, onSave) {
   `;
   document.body.appendChild(overlay);
   document.getElementById('note-cancel').onclick = () => overlay.remove();
-  document.getElementById('note-save').onclick = async () => {
+  const saveBtn = document.getElementById('note-save');
+  saveBtn.onclick = async () => {
     const body = document.getElementById('note-body').value.trim();
     if (!body) {
       alert('請輸入備註內容');
       return;
     }
-    await onSave(body);
-    overlay.remove();
+    if (saveBtn.disabled) return; // 防止儲存還沒完成前被連點兩下,造成 client_notes 被 insert 兩次
+    saveBtn.disabled = true;
+    saveBtn.textContent = '儲存中...';
+    try {
+      await onSave(body);
+      overlay.remove();
+    } catch (err) {
+      alert('儲存失敗:' + err.message);
+      saveBtn.disabled = false;
+      saveBtn.textContent = '儲存';
+    }
   };
 }
 

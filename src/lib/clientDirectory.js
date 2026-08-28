@@ -13,7 +13,7 @@ export async function listClientsWithMeta(salonId, { archived = false } = {}) {
     { data: pendingFollowUps, error: fuErr },
     { data: noteRows, error: noteErr },
   ] = await Promise.all([
-    supabase.from('clients').select('*').eq('salon_id', salonId).eq('archived', archived),
+    supabase.from('clients').select('*').eq('salon_id', salonId).eq('archived', archived).order('created_at', { ascending: false }),
     supabase.from('visits').select('client_id, visit_date, amount, visit_services(service_id)').eq('salon_id', salonId),
     supabase.from('product_sales').select('client_id, amount').eq('salon_id', salonId),
     supabase.from('client_tags').select('client_id, tag_id').eq('salon_id', salonId),

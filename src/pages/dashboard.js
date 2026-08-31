@@ -15,6 +15,7 @@ import { listThisMonthBirthdayClients } from '../lib/birthdays.js';
 import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openQuickAppointmentModal } from '../components/quickAppointmentModal.js';
 import { openAppointmentDetailModal } from '../components/appointmentDetailModal.js';
+import { openDeleteAppointmentModal } from '../components/deleteAppointmentModal.js';
 import { listTodayAndOverdueLeadFollowUps, completeLeadFollowUp, snoozeLeadFollowUp, buildInstagramUrl } from '../lib/leads.js';
 import { openLeadFollowUpModal } from '../components/leadFollowUpModal.js';
 import { openLeadDetailModal } from '../components/leadDetailModal.js';
@@ -225,6 +226,7 @@ function todayCreatedAppointmentRowHtml(a) {
       <div class="visit-tags" style="margin-top:8px;">
         <button type="button" class="tag dash-appt-view-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
         <button type="button" class="tag dash-appt-edit-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+        <button type="button" class="tag dash-appt-delete-btn" data-id="${a.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">刪除</button>
       </div>
     </div>
   `;
@@ -415,6 +417,13 @@ function bindEvents(app, content, data) {
       const appt = data.todayCreatedAppointments.find((a) => a.id === btn.dataset.id);
       if (!appt) return;
       openEditAppointment(app, appt);
+    };
+  });
+  content.querySelectorAll('.dash-appt-delete-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const appt = data.todayCreatedAppointments.find((a) => a.id === btn.dataset.id);
+      if (!appt) return;
+      openDeleteAppointmentModal(app, appt, () => loadContent(app));
     };
   });
 

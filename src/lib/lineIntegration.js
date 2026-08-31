@@ -281,6 +281,7 @@ export async function listTodayCreatedAppointments(salonId) {
     .eq('salon_id', salonId)
     .gte('created_at', startOfDay.toISOString())
     .lt('created_at', endOfDay.toISOString())
+    .neq('status', 'cancelled')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data;
@@ -363,6 +364,17 @@ export async function cancelAppointment(id) {
     .eq('appointment_id', id)
     .eq('status', 'pending');
   if (followErr) throw followErr;
+}
+
+// 「連同客戶資料一起刪除」用:把這位客戶名下所有還沒取消的預約都取消掉(沿用 cancelAppointment
+// 逐筆處理,只取消還沒發送的提醒,已發送的歷史紀錄保留)。如果客戶後續被永久刪除,
+// appointments 會被資料庫的 cascade 一併清空,這支函式先跑過一次不會出錯,只是先把未發送提醒收乾淨。
+export async function cancelAllAppointmentsForClient(clientId) {
+  const { data, error } = await supabase.from('appointments').select('id').eq('client_id', clientId).neq('status', 'cancelled');
+  if (error) throw error;
+  for (const a of data || []) {
+    await cancelAppointment(a.id);
+  }
 }
 
 // 一次建立:1 筆預約 + 勾選的預約前提醒 + 勾選的既有術後追蹤,每一筆各自獨立寫入 follow_ups,

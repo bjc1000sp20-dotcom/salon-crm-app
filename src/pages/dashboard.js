@@ -16,7 +16,14 @@ import { homeButtonHtml, bindHomeButton } from '../components/homeButton.js';
 import { openQuickAppointmentModal } from '../components/quickAppointmentModal.js';
 import { openAppointmentDetailModal } from '../components/appointmentDetailModal.js';
 import { openDeleteAppointmentModal } from '../components/deleteAppointmentModal.js';
-import { listTodayAndOverdueLeadFollowUps, completeLeadFollowUp, snoozeLeadFollowUp, buildInstagramUrl } from '../lib/leads.js';
+import {
+  listTodayAndOverdueLeadFollowUps,
+  listTodayCreatedLeadFollowUps,
+  deleteLeadFollowUp,
+  completeLeadFollowUp,
+  snoozeLeadFollowUp,
+  buildInstagramUrl,
+} from '../lib/leads.js';
 import { openLeadFollowUpModal } from '../components/leadFollowUpModal.js';
 import { openLeadDetailModal } from '../components/leadDetailModal.js';
 
@@ -68,6 +75,7 @@ async function loadContent(app) {
       clientsWithMeta,
       birthdayClients,
       leadFollowUps,
+      todayCreatedLeadFollowUps,
     ] = await Promise.all([
       listTodayAppointments(salonId),
       listTodayCreatedAppointments(salonId),
@@ -84,6 +92,7 @@ async function loadContent(app) {
       listClientsWithMeta(salonId),
       listThisMonthBirthdayClients(salonId),
       listTodayAndOverdueLeadFollowUps(salonId),
+      listTodayCreatedLeadFollowUps(salonId),
     ]);
     const sleepingClients = clientsWithMeta.filter(
       (c) => c.daysSinceLastVisit != null && c.daysSinceLastVisit >= SLEEPING_THRESHOLD_DAYS
@@ -104,6 +113,7 @@ async function loadContent(app) {
       sleepingClients,
       birthdayClients,
       leadFollowUps,
+      todayCreatedLeadFollowUps,
     };
   } catch (err) {
     console.error(err);
@@ -115,6 +125,7 @@ async function loadContent(app) {
     ${todoCountsHtml(data)}
     ${quickActionsHtml()}
     ${todayCreatedAppointmentsHtml(app, data.todayCreatedAppointments)}
+    ${todayCreatedLeadFollowUpsHtml(app, data.todayCreatedLeadFollowUps)}
     ${todayAppointmentsHtml(app, data.todayAppointments)}
     ${contactTodayHtml(app, data)}
     ${monthSummaryHtml(app, data.summary, data.analytics)}
@@ -236,6 +247,41 @@ function formatTime(iso) {
   if (!iso) return '';
   const d = new Date(iso);
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function todayCreatedLeadFollowUpsHtml(app, followUps) {
+  return `
+    <div class="section-label">今日已建立追蹤提醒</div>
+    <div class="analytics-block">
+      ${
+        followUps.length
+          ? followUps.map((f) => todayCreatedLeadFollowUpRowHtml(f)).join('')
+          : `<div class="empty-body">今天尚未建立追蹤提醒</div>`
+      }
+    </div>
+  `;
+}
+
+function todayCreatedLeadFollowUpRowHtml(f) {
+  const lead = f.leads || {};
+  const createdLabel = formatTime(f.created_at);
+  return `
+    <div class="card" style="cursor:default;flex-direction:column;align-items:stretch;margin-bottom:10px;">
+      <div class="card-name">${escapeHtml(lead.name || lead.contact_handle || '未命名')}</div>
+      <div class="card-sub">${escapeHtml(LEAD_CHANNEL_LABEL[lead.channel] || lead.channel || '')}${lead.contact_handle ? `・${escapeHtml(lead.contact_handle)}` : ''}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        <span class="tag" style="background:#EDE7F5;color:#6B5C9B;">進度:${escapeHtml(lead.lead_statuses?.name || '未設定')}</span>
+      </div>
+      <div class="field-hint" style="margin-top:6px;">提醒日期:${formatMD(f.remind_date)}${f.remind_time ? ` ${f.remind_time.slice(0, 5)}` : ''}</div>
+      <div class="visit-note" style="margin-top:4px;">${escapeHtml(f.content)}</div>
+      <div class="field-hint" style="margin-top:6px;">建立於:${createdLabel}</div>
+      <div class="visit-tags" style="margin-top:8px;">
+        <button type="button" class="tag dash-lead-fu-view-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F0EADA;">查看</button>
+        <button type="button" class="tag dash-lead-fu-edit-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F0EADA;">編輯</button>
+        <button type="button" class="tag dash-lead-fu-delete-btn" data-id="${f.id}" style="cursor:pointer;border:none;background:#F5E3DC;color:#B5533C;">刪除</button>
+      </div>
+    </div>
+  `;
 }
 
 function todayAppointmentsHtml(app, appointments) {
@@ -424,6 +470,33 @@ function bindEvents(app, content, data) {
       const appt = data.todayCreatedAppointments.find((a) => a.id === btn.dataset.id);
       if (!appt) return;
       openDeleteAppointmentModal(app, appt, () => loadContent(app));
+    };
+  });
+
+  content.querySelectorAll('.dash-lead-fu-view-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const f = data.todayCreatedLeadFollowUps.find((x) => x.id === btn.dataset.id);
+      if (!f || !f.leads) return;
+      openLeadDetailModal(app, f.leads.id, () => loadContent(app));
+    };
+  });
+  content.querySelectorAll('.dash-lead-fu-edit-btn').forEach((btn) => {
+    btn.onclick = () => {
+      const f = data.todayCreatedLeadFollowUps.find((x) => x.id === btn.dataset.id);
+      if (!f || !f.leads) return;
+      openLeadDetailModal(app, f.leads.id, () => loadContent(app), { startView: 'edit' });
+    };
+  });
+  content.querySelectorAll('.dash-lead-fu-delete-btn').forEach((btn) => {
+    btn.onclick = () => {
+      if (!confirm('確定要刪除這筆追蹤提醒嗎?')) return;
+      btn.disabled = true;
+      deleteLeadFollowUp(btn.dataset.id)
+        .then(() => loadContent(app))
+        .catch((err) => {
+          alert('刪除失敗:' + err.message);
+          btn.disabled = false;
+        });
     };
   });
 

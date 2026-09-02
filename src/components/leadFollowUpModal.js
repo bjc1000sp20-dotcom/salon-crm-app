@@ -1,6 +1,7 @@
 import { createLead } from '../lib/leads.js';
 import { ensureDefaultLeadStatuses } from '../lib/leadStatuses.js';
 import { addDaysToToday } from '../lib/lineIntegration.js';
+import { showToast } from './toast.js';
 
 const CHANNELS = [
   { id: 'instagram', name: 'Instagram' },
@@ -107,6 +108,7 @@ export async function openLeadFollowUpModal(app, onDone) {
         { content, remind_date, remind_time }
       );
       overlay.remove();
+      showToast('追蹤提醒已建立 ✓');
       if (onDone) onDone();
     } catch (err) {
       alert('儲存失敗:' + err.message);

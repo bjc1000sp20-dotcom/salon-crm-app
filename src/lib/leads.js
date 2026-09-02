@@ -46,6 +46,33 @@ export async function listTodayAndOverdueLeadFollowUps(salonId) {
   return data;
 }
 
+// 首頁「今日已建立追蹤提醒」用:依 created_at 判斷今天,跟依 remind_date 判斷「今天該聯絡誰」是不同概念,
+// 不特別過濾狀態——只是要確認「我今天有沒有成功新增」,不管這筆後來被完成/延後/取消都算今天有建立過。
+export async function listTodayCreatedLeadFollowUps(salonId) {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  const { data, error } = await supabase
+    .from('lead_follow_ups')
+    .select('*, leads(id, name, channel, contact_handle, status_id, state, lead_statuses(name))')
+    .eq('salon_id', salonId)
+    .gte('created_at', startOfDay.toISOString())
+    .lt('created_at', endOfDay.toISOString())
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function updateLeadFollowUp(id, fields) {
+  const { error } = await supabase.from('lead_follow_ups').update(fields).eq('id', id);
+  if (error) throw error;
+}
+
+export async function deleteLeadFollowUp(id) {
+  const { error } = await supabase.from('lead_follow_ups').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function completeLeadFollowUp(id) {
   const { error } = await supabase
     .from('lead_follow_ups')

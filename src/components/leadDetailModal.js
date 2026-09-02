@@ -5,6 +5,7 @@ import {
   addNextFollowUp,
   setLeadNotTracking,
   updateLead,
+  updateLeadFollowUp,
   convertLeadToClient,
   buildInstagramUrl,
 } from '../lib/leads.js';
@@ -15,13 +16,13 @@ const CHANNEL_LABEL = { instagram: 'Instagram', line: 'LINE', facebook: 'Faceboo
 const FU_STATUS_LABEL = { pending: '待處理', done: '已完成', cancelled: '已取消' };
 
 // 首頁「查看」跟「追蹤客戶」搜尋頁點擊都開這個彈窗:顯示 lead 詳情+全部歷史追蹤紀錄,並提供完成/延後/再次追蹤/不再追蹤/轉為正式客戶/編輯
-export async function openLeadDetailModal(app, leadId, onDone) {
+export async function openLeadDetailModal(app, leadId, onDone, { startView } = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal-box" style="max-height:85vh;overflow-y:auto;"><div id="ldm-body">載入中...</div></div>`;
   document.body.appendChild(overlay);
 
-  let view = 'main';
+  let view = startView || 'main';
   let lead, followUps;
 
   async function load() {
@@ -158,6 +159,7 @@ export async function openLeadDetailModal(app, leadId, onDone) {
   }
 
   function editViewHtml() {
+    const pending = followUps.find((f) => f.status === 'pending');
     return `
       <div class="modal-title">編輯追蹤客戶</div>
       <div class="field">
@@ -180,6 +182,26 @@ export async function openLeadDetailModal(app, leadId, onDone) {
           <option value="">未設定</option>
         </select>
       </div>
+      ${
+        pending
+          ? `
+      <div class="field">
+        <div class="field-label">提醒內容</div>
+        <textarea id="ldm-edit-content" rows="3">${escapeHtml(pending.content)}</textarea>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <div class="field-label">提醒日期</div>
+          <input type="date" id="ldm-edit-date" value="${pending.remind_date}" />
+        </div>
+        <div class="field">
+          <div class="field-label">提醒時間</div>
+          <input type="time" id="ldm-edit-time" value="${pending.remind_time ? pending.remind_time.slice(0, 5) : ''}" />
+        </div>
+      </div>
+      `
+          : ''
+      }
       <div class="field">
         <div class="field-label">備註</div>
         <textarea id="ldm-edit-notes" rows="3">${escapeHtml(lead.notes || '')}</textarea>
@@ -339,20 +361,10 @@ export async function openLeadDetailModal(app, leadId, onDone) {
 
     const editBtn = document.getElementById('ldm-edit');
     if (editBtn) {
-      editBtn.onclick = async () => {
+      editBtn.onclick = () => {
         view = 'edit';
         render();
-        try {
-          const statuses = await listEnabledLeadStatuses(app.salon.id);
-          const select = document.getElementById('ldm-edit-status');
-          if (select) {
-            select.innerHTML =
-              `<option value="">未設定</option>` +
-              statuses.map((s) => `<option value="${s.id}" ${lead.status_id === s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
-          }
-        } catch (err) {
-          console.error(err);
-        }
+        populateEditStatusSelect();
       };
     }
     const editSaveBtn = document.getElementById('ldm-edit-save');
@@ -363,9 +375,20 @@ export async function openLeadDetailModal(app, leadId, onDone) {
         const contact_handle = document.getElementById('ldm-edit-handle').value.trim();
         const status_id = document.getElementById('ldm-edit-status').value || null;
         const notes = document.getElementById('ldm-edit-notes').value.trim();
+        const pending = followUps.find((f) => f.status === 'pending');
+        const contentEl = document.getElementById('ldm-edit-content');
+        const dateEl = document.getElementById('ldm-edit-date');
+        const timeEl = document.getElementById('ldm-edit-time');
         editSaveBtn.disabled = true;
         try {
           await updateLead(lead.id, { name: name || null, channel, contact_handle: contact_handle || null, status_id, notes: notes || null });
+          if (pending && contentEl && dateEl) {
+            await updateLeadFollowUp(pending.id, {
+              content: contentEl.value.trim(),
+              remind_date: dateEl.value,
+              remind_time: timeEl.value || null,
+            });
+          }
           view = 'main';
           await load();
           render();
@@ -378,6 +401,20 @@ export async function openLeadDetailModal(app, leadId, onDone) {
     }
   }
 
+  async function populateEditStatusSelect() {
+    try {
+      const statuses = await listEnabledLeadStatuses(app.salon.id);
+      const select = document.getElementById('ldm-edit-status');
+      if (select) {
+        select.innerHTML =
+          `<option value="">未設定</option>` +
+          statuses.map((s) => `<option value="${s.id}" ${lead.status_id === s.id ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   try {
     await load();
   } catch (err) {
@@ -385,6 +422,7 @@ export async function openLeadDetailModal(app, leadId, onDone) {
     return;
   }
   render();
+  if (view === 'edit') populateEditStatusSelect();
 }
 
 function formatMD(dateStr) {
